@@ -433,27 +433,26 @@ function sidePanel(side, label, doneSet, exactView) {
       doneSet && doneSet.has(side.id) ? h('span', { class: 'donechip' }, '\u2713 solved') : null,
       h('span', { class: 'ordinal' }, '#' + fmt(side.ord + 1))),
     (() => {
-      const vs = { mode: '2d', yaw: R.DEFAULT_VIEW.yaw, pitch: R.DEFAULT_VIEW.pitch };
+      const vs = { mode: '2d', M: R.viewMatrix(R.DEFAULT_VIEW.yaw, R.DEFAULT_VIEW.pitch) };
       const netBox = h('div', { class: 'netwrap' });
       const draw = () => {
         netBox.innerHTML = vs.mode === '2d'
           ? R.netSVG(shownState, 330)
-          : R.iso3dSVG(shownState, 215, vs.yaw, vs.pitch);
+          : R.iso3dSVG(shownState, 215, vs.M);
         netBox.classList.toggle('grab', vs.mode === '3d');
       };
       const b2 = h('button', { class: 'viewbtn on', onclick: () => { vs.mode = '2d'; b2.classList.add('on'); b3.classList.remove('on'); hint.textContent = ''; draw(); } }, '2D');
       const b3 = h('button', { class: 'viewbtn', onclick: () => { vs.mode = '3d'; b3.classList.add('on'); b2.classList.remove('on'); hint.textContent = 'drag to rotate \u00b7 double-click to reset'; draw(); } }, '3D');
       const hint = h('span', { class: 'viewhint' });
       let drag = null;
-      netBox.addEventListener('pointerdown', ev => { if (vs.mode !== '3d') return; drag = { x: ev.clientX, y: ev.clientY }; netBox.setPointerCapture(ev.pointerId); });
+      netBox.addEventListener('pointerdown', ev => { if (vs.mode !== '3d') return; drag = { x: ev.clientX, y: ev.clientY }; try { netBox.setPointerCapture(ev.pointerId); } catch (e) {} });
       netBox.addEventListener('pointermove', ev => {
         if (!drag || vs.mode !== '3d') return;
-        vs.yaw += (ev.clientX - drag.x) * 0.012;
-        vs.pitch = Math.max(-1.25, Math.min(1.25, vs.pitch + (ev.clientY - drag.y) * 0.012));
+        vs.M = R.rotateView(vs.M, (ev.clientX - drag.x) * 0.012, (ev.clientY - drag.y) * 0.012);
         drag = { x: ev.clientX, y: ev.clientY }; draw();
       });
       netBox.addEventListener('pointerup', () => { drag = null; });
-      netBox.addEventListener('dblclick', () => { if (vs.mode === '3d') { vs.yaw = R.DEFAULT_VIEW.yaw; vs.pitch = R.DEFAULT_VIEW.pitch; draw(); } });
+      netBox.addEventListener('dblclick', () => { if (vs.mode === '3d') { vs.M = R.viewMatrix(R.DEFAULT_VIEW.yaw, R.DEFAULT_VIEW.pitch); draw(); } });
       draw();
       return h('div', null, h('div', { class: 'viewtoggle' }, b2, b3, hint), netBox);
     })(),

@@ -103,17 +103,36 @@ const FACES_3D = [
 ];
 const STICKERS_3D = FACES_3D.flatMap(([f, c]) => subdivide(f, c, c.map(x => V3[x])));
 
-function rotXY(p, yaw, pitch) {
-  const cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const x = p[0] * cy + p[2] * sy, z = -p[0] * sy + p[2] * cy, y = p[1];
-  const cp = Math.cos(pitch), sp = Math.sin(pitch);
-  return [x, y * cp - z * sp, y * sp + z * cp];
+/* view rotation as a 3x3 matrix, so the puzzle can tumble freely (no pole limits) */
+function viewMatrix(yaw, pitch) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return [[cy, 0, sy], [sp * sy, cp, -sp * cy], [-cp * sy, sp, cp * cy]];
 }
-function iso3dSVG(state, width, yaw, pitch, opts) {
+function mulM(A, B) {
+  const C = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+    C[i][j] = A[i][0]*B[0][j] + A[i][1]*B[1][j] + A[i][2]*B[2][j];
+  return C;
+}
+function applyM(M, p) {
+  return [M[0][0]*p[0]+M[0][1]*p[1]+M[0][2]*p[2],
+          M[1][0]*p[0]+M[1][1]*p[1]+M[1][2]*p[2],
+          M[2][0]*p[0]+M[2][1]*p[1]+M[2][2]*p[2]];
+}
+/* trackball increment: horizontal drag spins about the screen's vertical axis,
+   vertical drag about its horizontal axis — always relative to the screen, never gimbal-locked */
+function rotateView(M, dx, dy) {
+  const cy = Math.cos(dx), sy = Math.sin(dx), cx = Math.cos(dy), sx = Math.sin(dy);
+  const Ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
+  const Rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]];
+  return mulM(Rx, mulM(Ry, M));
+}
+function iso3dSVG(state, width, yawOrM, pitch, opts) {
   const o = opts || {};
+  const M = Array.isArray(yawOrM) ? yawOrM : viewMatrix(yawOrM, pitch);
   // cull and depth-sort whole faces (a tetrahedron's faces never interleave)
   const faces = FACES_3D.map(([f, c]) => {
-    const pts = c.map(x => rotXY(V3[x], yaw, pitch));
+    const pts = c.map(x => applyM(M, V3[x]));
     const u = [pts[1][0]-pts[0][0], pts[1][1]-pts[0][1], pts[1][2]-pts[0][2]];
     const v = [pts[2][0]-pts[0][0], pts[2][1]-pts[0][1], pts[2][2]-pts[0][2]];
     const n3 = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
@@ -127,7 +146,7 @@ function iso3dSVG(state, width, yaw, pitch, opts) {
     const bright = 0.62 + 0.38 * fc.nz;
     for (const s of STICKERS_3D) {
       if (s.face !== fc.f) continue;
-      const pp = s.pts.map(p => { const r = rotXY(p, yaw, pitch); return [r[0], -r[1]]; });
+      const pp = s.pts.map(p => { const r = applyM(M, p); return [r[0], -r[1]]; });
       polys.push(`<polygon points="${pp.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(' ')}" fill="${shade(COLORS[stickerColor(state, s)], bright)}"/>`);
     }
   }
@@ -136,7 +155,7 @@ function iso3dSVG(state, width, yaw, pitch, opts) {
 
 const DEFAULT_VIEW = { yaw: 0.55, pitch: 0.42 }; // shows F and Rf from a little above
 
-const api = { netSVG, iso3dSVG, stickerColor, axialColor, ALL_STICKERS, STICKERS_3D, COLORS, DEFAULT_VIEW };
+const api = { netSVG, iso3dSVG, viewMatrix, rotateView, stickerColor, axialColor, ALL_STICKERS, STICKERS_3D, COLORS, DEFAULT_VIEW };
 if (typeof module !== 'undefined') module.exports = api;
 else window.OORender = api;
 
