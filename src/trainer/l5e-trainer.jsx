@@ -102,18 +102,19 @@ function unindex(ix) {
   for (let k = 0; k < 6; k++) { e[k * 2] = p[k]; e[k * 2 + 1] = (flips >> k) & 1; }
   return { e, c: [Math.floor(cval / 9), Math.floor(cval / 3) % 3, cval % 3] };
 }
+const bottomEdgesPlaced = (s) => [3, 4, 5].reduce((g, dd) => g + (s.e[dd * 2] === dd && s.e[dd * 2 + 1] === 0 ? 1 : 0), 0) >= 2;
 // Solution Trainer goal (the "V"): >=2 of the bottom edges (DF/DL/DR) placed and centers solved
-const isVState = (s) =>
-  !s.c[0] && !s.c[1] && !s.c[2] &&
-  [3, 4, 5].reduce((g, dd) => g + (s.e[dd * 2] === dd && s.e[dd * 2 + 1] === 0 ? 1 : 0), 0) >= 2;
-// multi-source BFS: distance from every reachable state to the nearest V (max 7)
-function buildVDist(dist) {
+const isVState = (s) => !s.c[0] && !s.c[1] && !s.c[2] && bottomEdgesPlaced(s);
+// TL4E-B goal: a V (>=2 bottom edges, L & R centers solved) but with the back center twisted
+const isTL4EState = (s) => !s.c[0] && !s.c[1] && s.c[2] !== 0 && bottomEdgesPlaced(s);
+// multi-source BFS: distance from every reachable state to the nearest goal (max ~7)
+function buildGoalDist(dist, isGoal) {
   const vdist = new Int8Array(SPACE).fill(-1);
   let frontier = [];
   for (let i = 0; i < SPACE; i++) {
     if (dist[i] < 0) continue;
     const s = unindex(i);
-    if (isVState(s)) { vdist[i] = 0; frontier.push(s); }
+    if (isGoal(s)) { vdist[i] = 0; frontier.push(s); }
   }
   let d = 0;
   while (frontier.length) {
@@ -639,6 +640,8 @@ export default function L5ETrainer() {
   const pseudoVdistRef = useRef(null);
   const pseudoVbucketsRef = useRef(null);
   const pseudoVForRef = useRef(null);   // the offsets string the pseudo-V table was built for
+  const tl4eDistRef = useRef(null);
+  const tl4eBucketsRef = useRef(null);
   const poolsRef = useRef(null);
   const [ready, setReady] = useState(false);
 
@@ -657,6 +660,7 @@ export default function L5ETrainer() {
   const [guessMsg, setGuessMsg] = useState("");  // Solution Trainer: transient "too low" message
   const [pso, setPso] = useState("L, R'");       // pseudo offsets, shared by Recog + Pseudo V
   const [psStats, setPsStats] = useState({});    // Pseudo V accuracy, keyed by setup length
+  const [tl4eStats, setTl4eStats] = useState({}); // TL4E accuracy, keyed by setup length
   const [session, setSession] = useState([]);
   const [recap, setRecap] = useState(null);
   const [expandedSet, setExpandedSet] = useState(null);
@@ -684,12 +688,17 @@ export default function L5ETrainer() {
           }
           if (d.bar) setBar(d.bar);
           if (Array.isArray(d.selected)) setSelected(new Set(d.selected.filter((id) => SET_BY_ID[id])));
-          if (["drill", "recap", "solution", "recog", "pseudo"].includes(d.mode)) setMode(d.mode);
+          if (["drill", "recap", "solution", "recog", "pseudov", "tl4e"].includes(d.mode)) setMode(d.mode);
           if (typeof d.pso === "string") setPso(d.pso);
           if (d.psf && typeof d.psf === "object") {
             const v = {};
             for (const [k, st] of Object.entries(d.psf)) if (/^[1-7]$/.test(k)) v[k] = st;
             setPsStats(v);
+          }
+          if (d.tlf && typeof d.tlf === "object") {
+            const v = {};
+            for (const [k, st] of Object.entries(d.tlf)) if (/^[1-7]$/.test(k)) v[k] = st;
+            setTl4eStats(v);
           }
           if (Array.isArray(d.vlen)) setVlenSel(new Set(d.vlen.filter((n) => n >= 1 && n <= 7)));
           if (d.vfs && typeof d.vfs === "object") {
@@ -703,8 +712,10 @@ export default function L5ETrainer() {
       setTimeout(() => {
         if (cancelled) return;
         distRef.current = buildDist();
-        vdistRef.current = buildVDist(distRef.current);
+        vdistRef.current = buildGoalDist(distRef.current, isVState);
         vbucketsRef.current = buildVBuckets(distRef.current, vdistRef.current);
+        tl4eDistRef.current = buildGoalDist(distRef.current, isTL4EState);
+        tl4eBucketsRef.current = buildVBuckets(distRef.current, tl4eDistRef.current);
         poolsRef.current = buildPools();
         setReady(true);
       }, 40);
@@ -718,10 +729,10 @@ export default function L5ETrainer() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        window.storage.set(STORE_KEY, JSON.stringify({ caseStats, bar, selected: [...selected], mode, vlen: [...vlenSel], vfs, pso, psf: psStats })).catch(() => {});
+        window.storage.set(STORE_KEY, JSON.stringify({ caseStats, bar, selected: [...selected], mode, vlen: [...vlenSel], vfs, pso, psf: psStats, tlf: tl4eStats })).catch(() => {});
       } catch (e) {}
     }, 400);
-  }, [caseStats, bar, selected, mode, vlenSel, vfs, pso, psStats]);
+  }, [caseStats, bar, selected, mode, vlenSel, vfs, pso, psStats, tl4eStats]);
 
   const makeScramble = useCallback((setId, caseKey, presArr) => {
     let physical = null, scramble = null, uTwist = 0, target = 0;
@@ -823,19 +834,20 @@ export default function L5ETrainer() {
   //   above optimal  -> a valid but non-optimal answer
   // For any answer >= optimal we reveal every optimal solution and advance.
   const submitGuess = useCallback((n) => {
-    if (!current || (current.kind !== "solution" && current.kind !== "pseudov") || phase === "stopped") return;
+    const k = current && current.kind;
+    if (!current || (k !== "solution" && k !== "pseudov" && k !== "tl4e") || phase === "stopped") return;
     if (n < current.vlen) {
-      setGuessMsg(`No ${current.kind === "pseudov" ? "setup" : "solution"} in ${n} ${n === 1 ? "move" : "moves"} — the shortest is longer. Keep looking.`);
+      setGuessMsg(`No ${k === "solution" ? "solution" : "setup"} in ${n} ${n === 1 ? "move" : "moves"} — the shortest is longer. Keep looking.`);
       return;
     }
-    const isPseudo = current.kind === "pseudov";
-    const table = isPseudo ? pseudoVdistRef.current : vdistRef.current;
+    const table = k === "pseudov" ? pseudoVdistRef.current : k === "tl4e" ? tl4eDistRef.current : vdistRef.current;
+    const setStats = k === "pseudov" ? setPsStats : k === "tl4e" ? setTl4eStats : setVfs;
     const correct = n === current.vlen;
     setGuessMsg("");
-    setLast({ kind: current.kind, guess: n, correct, vlen: current.vlen, render: current.render, uTwist: current.uTwist, sols: allOptimalVs(current.render, table) });
+    setLast({ kind: k, guess: n, correct, vlen: current.vlen, render: current.render, uTwist: current.uTwist, sols: allOptimalVs(current.render, table) });
     setPhase("stopped");
-    setSession((s) => [...s.slice(-49), { kind: current.kind, correct, vlen: current.vlen }]);
-    (isPseudo ? setPsStats : setVfs)((v) => {
+    setSession((s) => [...s.slice(-49), { kind: k, correct, vlen: current.vlen }]);
+    setStats((v) => {
       const key = String(current.vlen);
       const prev = v[key] || { n: 0, correct: 0 };
       return { ...v, [key]: { n: prev.n + 1, correct: prev.correct + (correct ? 1 : 0) } };
@@ -905,6 +917,12 @@ export default function L5ETrainer() {
     setCurrent(ensurePseudoV() ? makeBucketScramble(vlenSel, pseudoVbucketsRef.current, "pseudov") : null);
   }, [ensurePseudoV, makeBucketScramble, vlenSel, pso]);
 
+  // TL4E (Feature): shortest setup to a V with the back center twisted.
+  const nextTL4E = useCallback(() => {
+    setPhase("ready"); setLast(null); setGuessMsg("");
+    setCurrent(makeBucketScramble(vlenSel, tl4eBucketsRef.current, "tl4e"));
+  }, [makeBucketScramble, vlenSel]);
+
   const commitOffsets = useCallback(() => {
     if (pso === committedPso.current) return;
     if (mode === "recog") nextRecog();
@@ -914,6 +932,7 @@ export default function L5ETrainer() {
   const advance = useCallback(() => {
     if (mode === "solution") { nextSolution(); return; }
     if (mode === "pseudov") { nextPseudoV(); return; }
+    if (mode === "tl4e") { nextTL4E(); return; }
     if (mode === "recog") { nextRecog(); return; }
     if (mode === "drill") { nextDrill(); return; }
     setRecap((r) => {
@@ -924,7 +943,7 @@ export default function L5ETrainer() {
       setCurrent(makeScramble(it.set, it.caseKey, poolOf(it.set).classes.get(it.caseKey)));
       return { ...r, idx };
     });
-  }, [mode, nextDrill, nextSolution, nextPseudoV, nextRecog, makeScramble, poolOf]);
+  }, [mode, nextDrill, nextSolution, nextPseudoV, nextTL4E, nextRecog, makeScramble, poolOf]);
 
   useEffect(() => {
     if (!ready) return;
@@ -932,6 +951,7 @@ export default function L5ETrainer() {
     setLast(null);
     if (mode === "solution") nextSolution();
     else if (mode === "pseudov") nextPseudoV();
+    else if (mode === "tl4e") nextTL4E();
     else if (mode === "recog") nextRecog();
     else if (mode === "drill") nextDrill();
     else startRecap();
@@ -987,9 +1007,9 @@ export default function L5ETrainer() {
         }
         return;
       }
-      if (mode === "solution" || mode === "pseudov") {
+      if (mode === "solution" || mode === "pseudov" || mode === "tl4e") {
         if (phase === "stopped") {
-          if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); (mode === "pseudov" ? nextPseudoV : nextSolution)(); }
+          if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); (mode === "pseudov" ? nextPseudoV : mode === "tl4e" ? nextTL4E : nextSolution)(); }
           return;
         }
         const m = e.code.match(/^(?:Digit|Numpad)([1-7])$/);
@@ -1001,7 +1021,7 @@ export default function L5ETrainer() {
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [phase, trigger, stopTimer, panel, mode, submitGuess, nextSolution, nextPseudoV, nextRecog, revealRecog]);
+  }, [phase, trigger, stopTimer, panel, mode, submitGuess, nextSolution, nextPseudoV, nextTL4E, nextRecog, revealRecog]);
 
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
@@ -1043,9 +1063,10 @@ export default function L5ETrainer() {
     setCaseStats({});
     setVfs({});
     setPsStats({});
+    setTl4eStats({});
     setSession([]);
     setLast(null);
-    try { window.storage.set(STORE_KEY, JSON.stringify({ caseStats: {}, bar, selected: [...selected], mode, vlen: [...vlenSel], vfs: {}, pso, psf: {} })).catch(() => {}); } catch (e) {}
+    try { window.storage.set(STORE_KEY, JSON.stringify({ caseStats: {}, bar, selected: [...selected], mode, vlen: [...vlenSel], vfs: {}, pso, psf: {}, tlf: {} })).catch(() => {}); } catch (e) {}
   };
 
   return (
@@ -1213,7 +1234,7 @@ export default function L5ETrainer() {
           </div>
         )}
 
-        {mode !== "solution" && mode !== "recog" && mode !== "pseudov" && (
+        {mode !== "solution" && mode !== "recog" && mode !== "pseudov" && mode !== "tl4e" && (
           <>
             <div className="chips">
               <span className="grouplabel" style={{ marginLeft: 0 }}>L5E</span>
@@ -1247,6 +1268,7 @@ export default function L5ETrainer() {
           <button className={"mode" + (mode === "solution" ? " on" : "")} onClick={() => setMode("solution")}>Solution</button>
           <button className={"mode" + (mode === "recog" ? " on" : "")} onClick={() => setMode("recog")}>Recog</button>
           <button className={"mode" + (mode === "pseudov" ? " on" : "")} onClick={() => setMode("pseudov")}>Pseudo V</button>
+          <button className={"mode" + (mode === "tl4e" ? " on" : "")} onClick={() => setMode("tl4e")}>TL4E</button>
         </div>
 
         {(mode === "recog" || mode === "pseudov") && (
@@ -1261,10 +1283,10 @@ export default function L5ETrainer() {
           </div>
         )}
 
-        {(mode === "solution" || mode === "pseudov") && (
+        {(mode === "solution" || mode === "pseudov" || mode === "tl4e") && (
           <>
             <div className="chips">
-              <span className="grouplabel" style={{ marginLeft: 0 }}>{mode === "pseudov" ? "setup length" : "solution length"}</span>
+              <span className="grouplabel" style={{ marginLeft: 0 }}>{mode === "solution" ? "solution length" : "setup length"}</span>
               {[1, 2, 3, 4, 5, 6, 7].map((L) => (
                 <button key={L} className={"chip" + (vlenSel.has(L) ? " on" : "")}
                   style={{ "--cdot": "var(--accent)" }} onClick={() => toggleVlen(L)}>
@@ -1302,6 +1324,7 @@ export default function L5ETrainer() {
               {mode === "solution" ? "Select at least one solution length to start."
                 : mode === "recog" ? "Enter at least one valid offset above to start."
                 : mode === "pseudov" ? "Enter valid offsets and select at least one setup length to start."
+                : mode === "tl4e" ? "Select at least one setup length to start."
                 : "Select at least one set to start."}
             </div>
           </div>
@@ -1330,7 +1353,7 @@ export default function L5ETrainer() {
               </>
             )}
           </div>
-        ) : current.kind === "solution" || current.kind === "pseudov" ? (
+        ) : current.kind === "solution" || current.kind === "pseudov" || current.kind === "tl4e" ? (
           <div className="stage" style={{ cursor: "default" }}>
             <div className="stagegrid">
               <div className="scramble">{current.scramble}</div>
@@ -1341,13 +1364,13 @@ export default function L5ETrainer() {
                 <div className={"timer" + (last.correct ? " good" : " bad")}>{last.correct ? "Correct" : "Not optimal"}</div>
                 <div className="reveal">
                   {!last.correct ? <span>you picked {last.guess} —</span> : null}
-                  <span>optimal {current.kind === "pseudov" ? "setup" : ""} is</span>
+                  <span>optimal {current.kind === "solution" ? "" : "setup"} is</span>
                   <span className="tag" style={{ "--cdot": "var(--accent)" }}>
                     <span className="dot" />{last.vlen} {last.vlen === 1 ? "move" : "moves"}
                   </span>
-                  <button className="restart" style={{ marginTop: 0 }} onClick={current.kind === "pseudov" ? nextPseudoV : nextSolution}>Next</button>
+                  <button className="restart" style={{ marginTop: 0 }} onClick={current.kind === "pseudov" ? nextPseudoV : current.kind === "tl4e" ? nextTL4E : nextSolution}>Next</button>
                 </div>
-                <div className="solhead">{last.sols.length === 1 ? `optimal ${current.kind === "pseudov" ? "setup" : "solution"}` : `${last.sols.length} optimal ${current.kind === "pseudov" ? "setups" : "solutions"}`}</div>
+                <div className="solhead">{last.sols.length === 1 ? `optimal ${current.kind === "solution" ? "solution" : "setup"}` : `${last.sols.length} optimal ${current.kind === "solution" ? "solutions" : "setups"}`}</div>
                 <div className="sollist">
                   {last.sols.map((sol, i) => (
                     <span key={i} className="mono solpill">{sol}</span>
@@ -1356,7 +1379,7 @@ export default function L5ETrainer() {
               </>
             ) : (
               <>
-                <div className="hint" style={{ marginTop: 14 }}>{current.kind === "pseudov" ? "How many moves is the shortest setup to a pseudo V?" : "How many moves is the shortest solution?"}</div>
+                <div className="hint" style={{ marginTop: 14 }}>{current.kind === "pseudov" ? "How many moves is the shortest setup to a pseudo V?" : current.kind === "tl4e" ? "How many moves is the shortest setup to a V with the back center twisted?" : "How many moves is the shortest solution?"}</div>
                 <div className="guessrow">
                   {[1, 2, 3, 4, 5, 6, 7].map((N) => (
                     <button key={N} className="guessbtn" onClick={() => submitGuess(N)}>{N}</button>
@@ -1443,6 +1466,30 @@ export default function L5ETrainer() {
                   </table>
                 )}
               </>
+            ) : mode === "tl4e" ? (
+              <>
+                <h3>TL4E — accuracy by setup length</h3>
+                {Object.keys(tl4eStats).length === 0 ? (
+                  <div className="empty">No answers yet. Pick the setup length and your accuracy lands here.</div>
+                ) : (
+                  <table>
+                    <thead><tr><th>Length</th><th>Seen</th><th>Correct</th><th>Accuracy</th></tr></thead>
+                    <tbody>
+                      {Object.keys(tl4eStats).map(Number).sort((a, b) => a - b).map((L) => {
+                        const a = tl4eStats[String(L)];
+                        return (
+                          <tr key={L}>
+                            <td className="name">{L} moves</td>
+                            <td className="mono">{a.n}</td>
+                            <td className="mono">{a.correct}</td>
+                            <td className="mono">{Math.round((a.correct / a.n) * 100)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </>
             ) : mode === "recog" ? (
               <>
                 <h3>Recog</h3>
@@ -1503,8 +1550,8 @@ export default function L5ETrainer() {
               <div className="times">
                 {session.slice(-24).map((t, i) => (
                   <span key={i} className="timepill"
-                    style={{ "--cdot": (t.kind === "solution" || t.kind === "pseudov") ? (t.correct ? "var(--accent)" : "#b04a42") : (t.set ? SET_BY_ID[t.set].color : "var(--accent)") }}>
-                    {(t.kind === "solution" || t.kind === "pseudov") ? (t.correct ? "✓" : "✗") : fmt(t.ms)}
+                    style={{ "--cdot": t.kind ? (t.correct ? "var(--accent)" : "#b04a42") : (t.set ? SET_BY_ID[t.set].color : "var(--accent)") }}>
+                    {t.kind ? (t.correct ? "✓" : "✗") : fmt(t.ms)}
                   </span>
                 ))}
               </div>
