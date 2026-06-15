@@ -821,7 +821,9 @@ export default function L5ETrainer() {
       const render = applyMoveString((invO ? invO + " " : "") + base.scramble, solvedState());
       const scramble = maskedScramble(render, distRef.current);  // masked: hides the offset
       if (!scramble) continue;
-      return { kind: "recog", scramble, render, uTwist: uTwistOf(scramble), caseKey: base.caseKey, offsetStr: off.str };
+      // keep the original (pre-mask) case state + AUF so the reveal matches the scramble's framing
+      return { kind: "recog", scramble, render, uTwist: uTwistOf(scramble),
+        caseKey: base.caseKey, offsetStr: off.str, caseRender: base.render, caseTwist: base.uTwist };
     }
     return null;
   }, [makeScramble]);
@@ -835,7 +837,8 @@ export default function L5ETrainer() {
 
   const revealRecog = useCallback(() => {
     if (!current || current.kind !== "recog") return;
-    setLast({ kind: "recog", caseKey: current.caseKey, offsetStr: current.offsetStr });
+    setLast({ kind: "recog", caseKey: current.caseKey, offsetStr: current.offsetStr,
+      caseRender: current.caseRender, caseTwist: current.caseTwist });
     setPhase("stopped");
   }, [current]);
 
@@ -1250,7 +1253,7 @@ export default function L5ETrainer() {
                   <button className="restart" style={{ marginTop: 0 }} onClick={nextRecog}>Next</button>
                 </div>
                 <div className="solhead">underlying L4E case</div>
-                <div className="panelimg"><PyraminxNet state={displayState(last.caseKey, "l4e", "DF")} uTwist={+last.caseKey.split("|")[1]} /></div>
+                <div className="panelimg"><PyraminxNet state={last.caseRender} uTwist={last.caseTwist} /></div>
               </>
             ) : (
               <>
