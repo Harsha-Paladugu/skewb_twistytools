@@ -414,7 +414,13 @@ function makeSolverCore(E, dist) {
           }
           for (const id of p.hits) {
             const cur = item.methods[id];
-            if (!cur || p.seq.length < cur.v) item.methods[id] = { v: p.seq.length, fin: A.length, cancel };
+            if (!cur || p.seq.length < cur.v) item.methods[id] = {
+              v: p.seq.length, fin: A.length, cancel,
+              // representative decomposition for the reconstruction view:
+              vmoves: p.seq.map(m => MOVES[m]).join(' '),  // the V / first-step moves
+              amoves: A.map(m => MOVES[m]).join(' '),       // the algorithm that finishes
+              jstate: E.copy(j.state),                      // the case the algorithm solves (for naming)
+            };
           }
         }
       }

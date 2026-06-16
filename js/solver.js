@@ -99,6 +99,32 @@ const UI = {
   optionsOpen: false,
 };
 const METHOD_LABEL = { l4e: 'L4E', ml4e: 'ML4E', l5e: 'L5E', tl4eb: 'TL4E-B', psl4e: 'Pseudo L4E', psml4e: 'Pseudo ML4E' };
+// first-step ("V") label for the reconstruction comment, per method
+const VLABEL = { l4e: 'V', ml4e: 'ML4E V', tl4eb: 'TL4E-B V', l5e: 'bar', psl4e: 'pseudo V', psml4e: 'pseudo ML4E V' };
+const METHOD_PRIORITY = ['l4e', 'ml4e', 'tl4eb', 'l5e', 'psl4e', 'psml4e'];
+// pick the decomposition to break down: shortest first step, then method order
+function primaryMethod(it) {
+  const entries = Object.entries(it.methods);
+  entries.sort((a, b) => a[1].v - b[1].v || METHOD_PRIORITY.indexOf(a[0]) - METHOD_PRIORITY.indexOf(b[0]));
+  return entries[0];
+}
+function caseNameOf(m) {
+  const S = window.OOSheet;
+  if (!S || !m || !m.jstate) return null;
+  try { return S.nameForState(m.jstate); } catch (e) { return null; }
+}
+// build the staged reconstruction (rotation / V / algorithm / final) for a solution
+function reconstruction(it) {
+  const [pid, pm] = primaryMethod(it);
+  const cname = caseNameOf(pm);
+  const lines = [];
+  if (it.prefix) lines.push({ mv: it.prefix, cmt: '' });
+  lines.push({ mv: pm.vmoves || '—', cmt: '// ' + (VLABEL[pid] || METHOD_LABEL[pid]) });
+  if (pm.amoves) lines.push({ mv: pm.amoves, cmt: '// algorithm' + (cname ? ' (' + cname + ')' : '') });
+  const text = lines.map(l => (l.mv + (l.cmt ? '  ' + l.cmt : '')).trim()).join('\n')
+    + '\nfinal solution (including cancels)\n' + it.display;
+  return { lines, finalLabel: 'final solution (including cancels)', final: it.display, text };
+}
 
 /* ---- per-user preferences (saved to the account when signed in) ---- */
 // Only the tuning lives here — scramble, results and requested lengths stay session-local.
@@ -324,8 +350,13 @@ function renderInner() {
       const badges = Object.entries(it.methods).map(([id, m]) =>
         h('span', { class: 'mbadge', title: 'first step ' + m.v + ' \u2192 finish ' + m.fin + (m.cancel ? ', ' + m.cancel + ' canceled' : '') },
           METHOD_LABEL[id] + ' ' + m.v + '+' + m.fin + (m.cancel ? '\u2212' + m.cancel : '')));
+      const rec = reconstruction(it);
+      const recEls = rec.lines.map(l =>
+        h('div', { class: 'recline' }, h('span', { class: 'recmv mono' }, l.mv), l.cmt ? h('span', { class: 'reccmt' }, l.cmt) : null));
+      recEls.push(h('div', { class: 'reclabel' }, rec.finalLabel));
+      recEls.push(h('div', { class: 'recline final' }, h('code', { class: 'recmv mono sol' }, rec.final)));
       sec.appendChild(h('div', { class: 'solrow solverrow' },
-        h('div', { class: 'solcell' }, h('code', { class: 'mono sol' }, it.display), copyBtn(it.display)),
+        h('div', { class: 'reconblock' }, h('div', { class: 'reconlines' }, ...recEls), copyBtn(rec.text)),
         h('div', { class: 'badgecell' }, badges),
         h('div', { class: 'solmeta scorechip', title: 'ergonomic cost \u2014 lower is nicer' }, String(it.score))));
     });

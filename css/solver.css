@@ -42,6 +42,16 @@
 .badgecell{display:flex;gap:6px;flex-wrap:wrap}
 .mbadge{font:600 11px 'Spline Sans Mono',monospace;letter-spacing:.04em;color:var(--ink);background:var(--green);border-radius:6px;padding:3px 7px;cursor:default}
 .scorechip{font:600 13px 'Spline Sans Mono',monospace;color:var(--yellow);min-width:44px;text-align:right}
+/* staged reconstruction: rotation / V / algorithm / final */
+.solverrow{align-items:flex-start}
+.reconblock{display:flex;align-items:flex-start;gap:8px;flex:1 1 360px;min-width:0}
+.reconlines{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.recline{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.recmv{font:500 14.5px 'Spline Sans Mono',monospace;color:var(--paper);overflow-wrap:anywhere}
+.reccmt{font:500 12.5px 'Spline Sans Mono',monospace;color:var(--dim)}
+.reclabel{font:500 11.5px 'Instrument Sans',sans-serif;color:var(--dim);margin-top:5px}
+.recline.final{margin-top:2px}
+.recline.final .recmv{color:var(--yellow)}
 .warnline{color:var(--yellow);font:500 13.5px 'Instrument Sans',sans-serif;margin:10px 2px}
 .hintline{max-width:560px}
 .pairrow.single{grid-template-columns:minmax(0,420px);justify-content:start}
