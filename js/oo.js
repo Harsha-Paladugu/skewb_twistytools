@@ -21,6 +21,10 @@ const fmt = n => n.toLocaleString('en-US');
 /* ---------------- tables: BFS + canonical classes, cached in IndexedDB ---------------- */
 const T = { dist: null, reps: null, depths: null, depthIdx: null, syms: null, rotByCorner: null, ready: false };
 const TABLE_VERSION = 'oo-tables-v1';
+// Depth-0 (the solved state) can't take a length-0 solution, so it counts as
+// solved by definition. `o` is an ordinal into T.reps.
+const isTrivial = (o) => T.depths[o] === 0;
+let browseFilter = 'all';   // depth browser: 'all' | 'unsolved' | 'solved'
 
 async function idbGet() {
   if (!('indexedDB' in window)) return null;
@@ -370,7 +374,9 @@ async function renderInner() {
 
 /* ---------------- home ---------------- */
 async function pageHome(main) {
-  const stats = await DB.stats();
+  const raw = await DB.stats();
+  // depth-0 (solved state) counts as solved; it's never in the recorded count
+  const stats = { total: raw.total, done: raw.done + (T.depthIdx[0] ? T.depthIdx[0].length : 0) };
   const pct = stats.total ? stats.done / stats.total : 0;
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'The best human solution to every Pyraminx position.'),
@@ -430,7 +436,7 @@ function sidePanel(side, label, doneSet, exactView) {
     h('div', { class: 'sidehead' },
       h('span', { class: 'sidelabel' }, label),
       h('span', { class: 'depthchip d' + side.depth }, side.depth + ' moves deep'),
-      doneSet && doneSet.has(side.id) ? h('span', { class: 'donechip' }, '\u2713 solved') : null,
+      (side.depth === 0 || (doneSet && doneSet.has(side.id))) ? h('span', { class: 'donechip' }, '\u2713 solved') : null,
       h('span', { class: 'ordinal' }, '#' + fmt(side.ord + 1))),
     (() => {
       const vs = { mode: '2d', M: R.viewMatrix(R.DEFAULT_VIEW.yaw, R.DEFAULT_VIEW.pitch) };
@@ -581,7 +587,7 @@ async function pageBrowse(main, route) {
   const depth = m && m[1] !== undefined ? +m[1] : 5;
   const page = m && m[2] ? +m[2] : 0;
   const bm = await DB.doneMap();
-  const isDone = o => !!(bm[o >> 3] & (1 << (o & 7)));
+  const isDone = o => isTrivial(o) || !!(bm[o >> 3] & (1 << (o & 7)));
 
   const chips = h('div', { class: 'depthchips' });
   for (let d = 0; d <= 11; d++) {
@@ -595,7 +601,15 @@ async function pageBrowse(main, route) {
     h('p', { class: 'lede sm' }, 'Depth is the proven minimum number of moves to solve. Click any position to see its mirror, its rotations, and the solutions on record.'),
     chips));
 
-  const list = T.depthIdx[depth];
+  const full = T.depthIdx[depth];
+  const solvedN = full.reduce((a, o) => a + (isDone(o) ? 1 : 0), 0);
+  main.appendChild(h('div', { class: 'filterrow' },
+    [['all', 'All', full.length], ['unsolved', 'Unsolved', full.length - solvedN], ['solved', 'Solved', solvedN]]
+      .map(([v, l, n]) => h('button', { class: 'filterbtn' + (browseFilter === v ? ' on' : ''),
+        onclick: () => { browseFilter = v; render(); } }, l, h('span', { class: 'fct' }, fmt(n))))));
+
+  const list = browseFilter === 'solved' ? full.filter(isDone)
+    : browseFilter === 'unsolved' ? full.filter(o => !isDone(o)) : full;
   const PER = 48, pages = Math.max(1, Math.ceil(list.length / PER));
   const pg = Math.min(page, pages - 1);
   const grid = h('div', { class: 'classgrid' });
@@ -612,7 +626,7 @@ async function pageBrowse(main, route) {
     h('span', { class: 'pginfo' }, 'page ' + fmt(pg + 1) + ' of ' + fmt(pages) + ' \u00b7 ' + fmt(list.length) + ' positions at depth ' + depth),
     h('a', { href: '#/browse/' + depth + '/p' + Math.min(pages - 1, pg + 1), class: 'ghost' + (pg >= pages - 1 ? ' off' : '') }, 'next \u2192'),
     h('button', { class: 'ghost', onclick: () => {
-      const un = list.filter(o => !isDone(o));
+      const un = full.filter(o => !isDone(o));
       if (!un.length) { toast('Every position at this depth is already solved \u2014 try another depth.'); return; }
       const o = un[Math.floor(Math.random() * un.length)];
       const st = E.unidx(T.reps[o]);
@@ -649,23 +663,25 @@ async function pageMod(main) {
         h('a', { class: 'ghost', href: '#/c/' + s.pairId }, 'open position')));
     main.appendChild(row);
   }
-  /* moderators */
-  const mc = h('section', { class: 'card' }, h('h3', null, 'Moderators'));
-  const mods = await DB.mods();
-  const tbl = h('div', { class: 'modlist' });
-  for (const mEntry of mods) tbl.appendChild(h('div', { class: 'modent' },
-    h('span', null, mEntry.email || mEntry.uid, mEntry.invite ? ' \u00b7 invited, not yet signed in' : ''),
-    DB.isAdmin ? h('button', { class: 'ghost sm', onclick: async () => { await DB.revoke(mEntry.invite ? mEntry.email : mEntry.uid); render(); } }, 'remove') : null));
-  if (!mods.length) tbl.appendChild(h('p', { class: 'empty' }, 'No additional moderators yet.'));
-  const inv = h('div', { class: 'inviterow' },
-    h('input', { class: 'searchin', placeholder: 'google account email', 'aria-label': 'moderator email' }),
-    h('button', { class: 'primary', onclick: async ev => {
-      const em = ev.target.parentElement.querySelector('input').value.trim().toLowerCase();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter a valid email.'); return; }
-      await DB.invite(em); toast('Invited \u2014 they become a moderator the next time they sign in.'); render();
-    } }, 'Add moderator'));
-  mc.append(tbl, inv);
-  main.appendChild(mc);
+  /* moderators \u2014 admin only (managing moderators is restricted to admins) */
+  if (DB.isAdmin) {
+    const mc = h('section', { class: 'card' }, h('h3', null, 'Moderators'));
+    const mods = await DB.mods();
+    const tbl = h('div', { class: 'modlist' });
+    for (const mEntry of mods) tbl.appendChild(h('div', { class: 'modent' },
+      h('span', null, mEntry.email || mEntry.uid, mEntry.invite ? ' \u00b7 invited, not yet signed in' : ''),
+      h('button', { class: 'ghost sm', onclick: async () => { await DB.revoke(mEntry.invite ? mEntry.email : mEntry.uid); render(); } }, 'remove')));
+    if (!mods.length) tbl.appendChild(h('p', { class: 'empty' }, 'No additional moderators yet.'));
+    const inv = h('div', { class: 'inviterow' },
+      h('input', { class: 'searchin', placeholder: 'google account email', 'aria-label': 'moderator email' }),
+      h('button', { class: 'primary', onclick: async ev => {
+        const em = ev.target.parentElement.querySelector('input').value.trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter a valid email.'); return; }
+        await DB.invite(em); toast('Invited \u2014 they become a moderator the next time they sign in.'); render();
+      } }, 'Add moderator'));
+    mc.append(tbl, inv);
+    main.appendChild(mc);
+  }
 }
 
 /* ---------------- about ---------------- */
