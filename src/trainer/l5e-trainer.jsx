@@ -300,6 +300,10 @@ function rotateFrame(s, times) {
   return s;
 }
 const BAR_ROT = { DL: 0, DR: 1, DF: 2 };
+// L4E angle: the canonical L4E case has the open slot at the front (DF). ML4E-R
+// / ML4E-L are the SAME cases viewed from another angle (a frame rotation), so
+// presenting at the right/left slot is just a rotation of the front case.
+const L4E_ROT = { DF: 0, DL: 1, DR: 2 };
 
 // ---------- state enumeration ----------
 function permutationsOf(arr) {
@@ -353,7 +357,7 @@ const SETS = [
   { id: "bl5e", name: "BL5E", group: "L5E", color: "#27975a" },
   { id: "ht", name: "Heads / Tails", group: "L5E", color: "#9355bd" },
   { id: "yy", name: "Yin / Yang", group: "L5E", color: "#cd7c20" },
-  { id: "l4e", name: "L4E / ML4E", group: "L4E", color: "#74882b" },
+  { id: "l4e", name: "L4E", group: "L4E", color: "#74882b" },
 ];
 const SET_BY_ID = Object.fromEntries(SETS.map((s) => [s.id, s]));
 const L5E_IDS = SETS.filter((s) => s.group === "L5E").map((s) => s.id);
@@ -518,6 +522,19 @@ const CASE_SEP = "";
 // Solution Trainer goal types: the user picks any combination and the trainer
 // solves to the UNION of the selected goals. Order here is the display order
 // and the canonical order for the combined-table cache key.
+// Presentation-angle menus (multi-select), replacing the old triangle icon.
+// L5E: which bottom bar stays solved. L4E: which slot is the open/working slot.
+const L5E_BARS = [
+  { id: "DL", label: "Left" },
+  { id: "DR", label: "Right" },
+  { id: "DF", label: "Front" },
+];
+const L4E_SLOTS = [
+  { id: "DF", label: "Front (L4E)" },
+  { id: "DR", label: "Right (ML4E-R)" },
+  { id: "DL", label: "Left (ML4E-L)" },
+];
+
 const GOAL_TYPES = [
   { id: "v", label: "V" },
   { id: "pv", label: "Pseudo V" },
@@ -643,25 +660,6 @@ function AlgPanel({ panel, onClose }) {
   );
 }
 
-function BarTriangle({ bar, onPick }) {
-  const P = { B: [50, 12], L: [12, 78], R: [88, 78] };
-  const edges = [
-    { id: "DF", a: P.L, b: P.R },
-    { id: "DL", a: P.L, b: P.B },
-    { id: "DR", a: P.R, b: P.B },
-  ];
-  return (
-    <svg viewBox="0 0 100 90" className="bar-tri" aria-label="presolved edge">
-      <polygon points="50,12 12,78 88,78" className="tri-fill" />
-      {edges.map((ed) => (
-        <line key={ed.id} x1={ed.a[0]} y1={ed.a[1]} x2={ed.b[0]} y2={ed.b[1]}
-          className={"tri-edge" + (bar === ed.id ? " sel" : "")} onClick={() => onPick(ed.id)} />
-      ))}
-      <text x="50" y="58" className="tri-label">{bar}</text>
-    </svg>
-  );
-}
-
 export default function L5ETrainer() {
   const distRef = useRef(null);
   const vdistRef = useRef(null);
@@ -678,7 +676,8 @@ export default function L5ETrainer() {
   const poolsRef = useRef(null);
   const [ready, setReady] = useState(false);
 
-  const [bar, setBar] = useState("DL");
+  const [l5eBars, setL5eBars] = useState(() => new Set(["DL"]));  // L5E bar orientations to drill
+  const [l4eSlots, setL4eSlots] = useState(() => new Set(["DF"])); // L4E open-slot angles to drill
   const [selected, setSelected] = useState(() => new Set(L5E_IDS));
   const [mode, setMode] = useState("drill");
   const [vlenSel, setVlenSel] = useState(() => new Set([3, 4, 5, 6])); // target solution lengths (Solution Trainer)
@@ -720,7 +719,9 @@ export default function L5ETrainer() {
             }
             setCaseStats(migrated);
           }
-          if (d.bar) setBar(d.bar);
+          if (Array.isArray(d.l5eBars)) { const b = d.l5eBars.filter((x) => x in BAR_ROT); if (b.length) setL5eBars(new Set(b)); }
+          else if (d.bar && d.bar in BAR_ROT) setL5eBars(new Set([d.bar])); // migrate legacy single bar
+          if (Array.isArray(d.l4eSlots)) { const a = d.l4eSlots.filter((x) => x in L4E_ROT); if (a.length) setL4eSlots(new Set(a)); }
           if (Array.isArray(d.selected)) setSelected(new Set(d.selected.filter((id) => SET_BY_ID[id])));
           if (["drill", "recap", "solution", "recog"].includes(d.mode)) setMode(d.mode);
           if (typeof d.pso === "string") setPso(d.pso);
@@ -755,16 +756,22 @@ export default function L5ETrainer() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        window.storage.set(STORE_KEY, JSON.stringify({ caseStats, bar, selected: [...selected], mode, vlen: [...vlenSel], goals: [...goals], caseSel: [...caseSel], vfs, pso })).catch(() => {});
+        window.storage.set(STORE_KEY, JSON.stringify({ caseStats, l5eBars: [...l5eBars], l4eSlots: [...l4eSlots], selected: [...selected], mode, vlen: [...vlenSel], goals: [...goals], caseSel: [...caseSel], vfs, pso })).catch(() => {});
       } catch (e) {}
     }, 400);
-  }, [caseStats, bar, selected, mode, vlenSel, goals, caseSel, vfs, pso]);
+  }, [caseStats, l5eBars, l4eSlots, selected, mode, vlenSel, goals, caseSel, vfs, pso]);
 
   const makeScramble = useCallback((setId, caseKey, presArr) => {
+    // present the case at a randomly chosen selected angle (bar for L5E, open
+    // slot for L4E); both are frame rotations of the canonical case.
+    const angles = setId === "l4e" ? [...l4eSlots] : [...l5eBars];
+    const rotMap = setId === "l4e" ? L4E_ROT : BAR_ROT;
+    const fallback = setId === "l4e" ? "DF" : "DL";
     let physical = null, scramble = null, uTwist = 0, target = 0;
     for (let attempt = 0; attempt < 30; attempt++) {
       const pres = presArr[Math.floor(Math.random() * presArr.length)];
-      physical = setId === "l4e" ? copyState(pres.st) : rotateFrame(copyState(pres.st), BAR_ROT[bar]);
+      const angle = angles.length ? angles[Math.floor(Math.random() * angles.length)] : fallback;
+      physical = rotateFrame(copyState(pres.st), rotMap[angle] || 0);
       target = pres.t;
       scramble = maskedScramble(physical, distRef.current);
       if (!scramble) continue;
@@ -777,12 +784,13 @@ export default function L5ETrainer() {
     // if the generator could not hit the target twist, report the case actually shown
     const ck = scramble && uTwist === target ? caseKey : realCanonKey(physical, uTwist);
     return { scramble, set: setId, caseKey: ck, render: physical, uTwist };
-  }, [bar]);
+  }, [l4eSlots, l5eBars]);
 
   const poolOf = useCallback((id) => {
     const pools = poolsRef.current;
-    return id === "l4e" ? pools["l4e-" + bar] : pools[id];
-  }, [bar]);
+    // L4E always uses the front (DF) case set; ML4E-R/-L are angles, not pools.
+    return id === "l4e" ? pools["l4e-DF"] : pools[id];
+  }, []);
 
   // Per-case selection, keyed by case NAME. caseSel holds DISABLED case names,
   // so a case is generated unless it's explicitly turned off (new cases default
@@ -1014,7 +1022,7 @@ export default function L5ETrainer() {
     else if (mode === "drill") nextDrill();
     else startRecap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, bar, selected, mode, vlenSel, goals, caseSel]);
+  }, [ready, l5eBars, l4eSlots, selected, mode, vlenSel, goals, caseSel]);
 
   const tick = useCallback(() => {
     setElapsed(performance.now() - t0.current);
@@ -1100,16 +1108,23 @@ export default function L5ETrainer() {
       return n;
     });
   };
+  // presentation-angle menus: keep at least one option selected
+  const toggleAngle = (setter) => (id) => setter((s) => {
+    const n = new Set(s);
+    if (n.has(id)) { if (n.size > 1) n.delete(id); } else n.add(id);
+    return n;
+  });
+  const toggleL5eBar = toggleAngle(setL5eBars);
+  const toggleL4eSlot = toggleAngle(setL4eSlots);
 
   const counts = useMemo(() => {
     if (!ready) return {};
     const c = {};
     for (const s of SETS) {
-      const p = poolOf(s.id);
-      if (p) c[s.id] = p.classes.size;
+      if (poolOf(s.id)) c[s.id] = casesOf(s.id).length; // distinct named cases, not raw variants
     }
     return c;
-  }, [ready, poolOf]);
+  }, [ready, poolOf, casesOf]);
 
   const recapDone = mode === "recap" && recap && recap.idx >= recap.queue.length;
 
@@ -1125,7 +1140,7 @@ export default function L5ETrainer() {
     setVfs({});
     setSession([]);
     setLast(null);
-    try { window.storage.set(STORE_KEY, JSON.stringify({ caseStats: {}, bar, selected: [...selected], mode, vlen: [...vlenSel], goals: [...goals], caseSel: [...caseSel], vfs: {}, pso })).catch(() => {}); } catch (e) {}
+    try { window.storage.set(STORE_KEY, JSON.stringify({ caseStats: {}, l5eBars: [...l5eBars], l4eSlots: [...l4eSlots], selected: [...selected], mode, vlen: [...vlenSel], goals: [...goals], caseSel: [...caseSel], vfs: {}, pso })).catch(() => {}); } catch (e) {}
   };
 
   return (
@@ -1147,12 +1162,6 @@ export default function L5ETrainer() {
         .brand { font-weight: 600; font-size: 16px; letter-spacing: .03em; }
         .brand span { color: var(--faint); font-weight: 500; }
         .spacer { flex: 1; }
-        .bar-tri { width: 58px; height: 52px; cursor: pointer; }
-        .tri-fill { fill: var(--panel2); }
-        .tri-edge { stroke: var(--line); stroke-width: 7; stroke-linecap: round; cursor: pointer; transition: stroke .15s; }
-        .tri-edge:hover { stroke: var(--dim); }
-        .tri-edge.sel { stroke: var(--accent); }
-        .tri-label { fill: var(--dim); font-size: 16px; text-anchor: middle; font-family: 'Chivo Mono', monospace; pointer-events: none; }
         .gear { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px;
           padding: 7px 12px; cursor: pointer; font-size: 13px; font-family: inherit; }
         .gear:hover { color: var(--text); border-color: var(--dim); }
@@ -1296,7 +1305,6 @@ export default function L5ETrainer() {
             <div className="brand">L5E <span>Trainer</span></div>
           </div>
           <div className="spacer" />
-          <BarTriangle bar={bar} onPick={setBar} />
           <button className="gear" onClick={() => setSettingsOpen((o) => !o)}>Settings</button>
         </header>
 
@@ -1323,6 +1331,20 @@ export default function L5ETrainer() {
                       {ready && <span className="ct">{counts[s.id]}</span>}
                     </button>
                   ))}
+                </div>
+                {/* presentation-angle menu for this group (replaces the old icon) */}
+                <div className="chips" style={{ marginTop: 6 }}>
+                  <span className="grouplabel" style={{ marginLeft: 0 }}>{grp === "L4E" ? "slot" : "bar"}</span>
+                  {(grp === "L4E" ? L4E_SLOTS : L5E_BARS).map((a) => {
+                    const sel = grp === "L4E" ? l4eSlots : l5eBars;
+                    const toggle = grp === "L4E" ? toggleL4eSlot : toggleL5eBar;
+                    return (
+                      <button key={a.id} className={"chip" + (sel.has(a.id) ? " on" : "")}
+                        style={{ "--cdot": "var(--accent)" }} onClick={() => toggle(a.id)}>
+                        <span className="dot" />{a.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </details>
             ))}
@@ -1601,7 +1623,7 @@ export default function L5ETrainer() {
                       .sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)
                       .map(([ck, st]) => (
                         <div key={ck} className="casecard click" onClick={() => setPanel({ kind: "class", caseKey: ck, set: st.set })}>
-                          <PyraminxNet state={displayState(ck, st.set, bar)} uTwist={+ck.split("|")[1]} />
+                          <PyraminxNet state={displayState(ck, st.set, st.set === "l4e" ? ([...l4eSlots][0] || "DF") : ([...l5eBars][0] || "DL"))} uTwist={+ck.split("|")[1]} />
                           <div className="casenums">
                             <span className="mono">{fmt(st.sum / st.n)}</span>
                             <span className="casesub">{SHEET.CNAME[ck] || "unnamed"}</span>
