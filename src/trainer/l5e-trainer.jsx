@@ -719,9 +719,9 @@ export default function L5ETrainer() {
             }
             setCaseStats(migrated);
           }
-          if (Array.isArray(d.l5eBars)) { const b = d.l5eBars.filter((x) => x in BAR_ROT); if (b.length) setL5eBars(new Set(b)); }
+          if (Array.isArray(d.l5eBars)) setL5eBars(new Set(d.l5eBars.filter((x) => x in BAR_ROT))); // may be empty (nothing selected)
           else if (d.bar && d.bar in BAR_ROT) setL5eBars(new Set([d.bar])); // migrate legacy single bar
-          if (Array.isArray(d.l4eSlots)) { const a = d.l4eSlots.filter((x) => x in L4E_ROT); if (a.length) setL4eSlots(new Set(a)); }
+          if (Array.isArray(d.l4eSlots)) setL4eSlots(new Set(d.l4eSlots.filter((x) => x in L4E_ROT)));
           if (Array.isArray(d.selected)) setSelected(new Set(d.selected.filter((id) => SET_BY_ID[id])));
           if (["drill", "recap", "solution", "recog"].includes(d.mode)) setMode(d.mode);
           if (typeof d.pso === "string") setPso(d.pso);
@@ -808,6 +808,9 @@ export default function L5ETrainer() {
     const byName = new Map();
     for (const ck of p.classes.keys()) {
       const name = SHEET.CNAME[ck] || ck;
+      // L4E: ML4E-named cases are the same L4E cases from another angle — drop
+      // them; the slot menu handles presenting the L4E cases from other slots.
+      if (setId === "l4e" && /^ML4E/.test(name)) continue;
       if (!byName.has(name)) byName.set(name, []);
       byName.get(name).push(ck);
     }
@@ -831,8 +834,11 @@ export default function L5ETrainer() {
     const entries = [];
     for (const id of selected) {
       const pool = poolOf(id); if (!pool) continue;
+      if ((id === "l4e" ? l4eSlots : l5eBars).size === 0) continue; // no presentation angle picked
       for (const [ck, sts] of pool.classes) {
-        if (caseSel.has(id + CASE_SEP + (SHEET.CNAME[ck] || ck))) continue;
+        const name = SHEET.CNAME[ck] || ck;
+        if (id === "l4e" && /^ML4E/.test(name)) continue;
+        if (caseSel.has(id + CASE_SEP + name)) continue;
         entries.push({ id, ck, sts });
       }
     }
@@ -843,7 +849,7 @@ export default function L5ETrainer() {
       if (r < e.sts.length) { setCurrent(makeScramble(e.id, e.ck, e.sts)); return; }
       r -= e.sts.length;
     }
-  }, [selected, caseSel, makeScramble, poolOf]);
+  }, [selected, caseSel, l4eSlots, l5eBars, makeScramble, poolOf]);
 
   const startRecap = useCallback(() => {
     // one entry per enabled named case (a representative state), so recap walks
@@ -851,6 +857,7 @@ export default function L5ETrainer() {
     const q = [];
     for (const id of [...selected]) {
       if (!poolOf(id)) continue;
+      if ((id === "l4e" ? l4eSlots : l5eBars).size === 0) continue; // no presentation angle picked
       for (const { name, keys } of casesOf(id)) { if (caseSel.has(id + CASE_SEP + name)) continue; q.push({ set: id, caseKey: keys[0] }); }
     }
     const queue = shuffled(q);
@@ -859,7 +866,7 @@ export default function L5ETrainer() {
       const it = queue[0];
       setCurrent(makeScramble(it.set, it.caseKey, poolOf(it.set).classes.get(it.caseKey)));
     } else setCurrent(null);
-  }, [selected, caseSel, casesOf, makeScramble, poolOf]);
+  }, [selected, caseSel, l4eSlots, l5eBars, casesOf, makeScramble, poolOf]);
 
   // Solution Trainer: every optimal solution (all shortest descents of vdist to a V)
   const allOptimalVs = useCallback((s, vdist) => {
@@ -1108,10 +1115,10 @@ export default function L5ETrainer() {
       return n;
     });
   };
-  // presentation-angle menus: keep at least one option selected
+  // presentation-angle menus (may be emptied -> nothing generates, shows a prompt)
   const toggleAngle = (setter) => (id) => setter((s) => {
     const n = new Set(s);
-    if (n.has(id)) { if (n.size > 1) n.delete(id); } else n.add(id);
+    if (n.has(id)) n.delete(id); else n.add(id);
     return n;
   });
   const toggleL5eBar = toggleAngle(setL5eBars);
@@ -1145,155 +1152,6 @@ export default function L5ETrainer() {
 
   return (
     <div className="app">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap');
-        :root {
-          --bg: #f6f6f3; --panel: #ffffff; --panel2: #f0f1ed; --line: #e4e6e0;
-          --text: #1c221e; --dim: #5d6b62; --faint: #97a29a; --accent: #1f8a4c;
-        }
-        * { box-sizing: border-box; }
-        .app { min-height: 100vh; background: var(--bg); color: var(--text);
-          font-family: 'Instrument Sans', system-ui, sans-serif;
-          display: flex; flex-direction: column; align-items: center; padding: 20px 16px 40px; }
-        .frame { width: 100%; max-width: 920px; }
-        header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-        .brandrow { display: flex; align-items: center; gap: 9px; }
-        .logo { width: 24px; height: 22px; color: var(--text); display: block; }
-        .brand { font-weight: 600; font-size: 16px; letter-spacing: .03em; }
-        .brand span { color: var(--faint); font-weight: 500; }
-        .spacer { flex: 1; }
-        .gear { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px;
-          padding: 7px 12px; cursor: pointer; font-size: 13px; font-family: inherit; }
-        .gear:hover { color: var(--text); border-color: var(--dim); }
-        .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
-        .chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px;
-          border: 1px solid var(--line); background: var(--panel); color: var(--dim);
-          cursor: pointer; font-size: 13px; font-family: inherit; transition: all .12s; user-select: none; }
-        .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-        .chip .ct { color: var(--faint); font-size: 11px; font-family: 'Chivo Mono', monospace; }
-        .chip.on { border-color: transparent; color: var(--text); background: #fff; box-shadow: inset 0 0 0 1.5px var(--cdot), 0 1px 2px rgba(22,30,25,.05); }
-        .chip.on .dot { background: var(--cdot); }
-        .grouplabel { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin: 0 2px 0 6px; }
-        .presets { display: flex; gap: 12px; margin: 4px 2px 16px; }
-        .preset { background: none; border: none; color: var(--faint); font-size: 12px; cursor: pointer; padding: 0; font-family: inherit; text-decoration: underline dotted; }
-        .preset:hover { color: var(--dim); }
-        .setgrp { margin-bottom: 6px; }
-        .setgrp > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 4px 2px; user-select: none; }
-        .setgrp > summary::-webkit-details-marker { display: none; }
-        .setgrp > summary::before { content: "▸"; color: var(--faint); font-size: 11px; transition: transform .12s; }
-        .setgrp[open] > summary::before { content: "▾"; }
-        .setgrp > summary .ct { color: var(--faint); font-size: 11px; font-family: 'Chivo Mono', monospace; }
-        .casepick { margin: 2px 0 6px; }
-        .casetoggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
-          color: var(--dim); font-size: 13px; font-family: inherit; padding: 5px 2px; }
-        .casetoggle:hover { color: var(--text); }
-        .casetoggle .chev { color: var(--faint); font-size: 11px; }
-        .casetoggle .dot { width: 8px; height: 8px; border-radius: 50%; }
-        .casetoggle .ct { color: var(--faint); font-size: 11px; font-family: 'Chivo Mono', monospace; }
-        .caselistwrap { border-left: 2px solid var(--line); padding: 6px 0 6px 12px; margin: 2px 0 8px 6px; }
-        .modes { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-bottom: 14px; }
-        .mode { padding: 7px 18px; background: var(--panel); border: none; color: var(--dim); cursor: pointer; font-size: 13px; font-family: inherit; }
-        .mode.on { background: var(--panel2); color: var(--text); }
-        .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 1px 3px rgba(22,30,25,.05);
-          padding: 26px 26px 24px; cursor: pointer; user-select: none; }
-        .stagegrid { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: center; }
-        @media (min-width: 640px) { .stagegrid { grid-template-columns: 1fr 170px; } }
-        .scramble { font-family: 'Chivo Mono', monospace; font-size: clamp(19px, 3vw, 27px);
-          letter-spacing: .13em; line-height: 1.6; color: var(--text); text-align: left; }
-        .pyranet { width: 100%; max-width: 190px; justify-self: center; }
-        .timer { font-family: 'Chivo Mono', monospace; font-weight: 300; text-align: center;
-          font-size: clamp(56px, 11vw, 92px); line-height: 1.1; margin: 12px 0 4px;
-          color: var(--text); font-variant-numeric: tabular-nums; }
-        .timer.running { color: var(--accent); }
-        .timer.good { color: var(--accent); font-size: clamp(40px, 8vw, 64px); }
-        .timer.bad { color: #b04a42; font-size: clamp(40px, 8vw, 64px); }
-        .hint { color: var(--faint); font-size: 13px; min-height: 1.2em; text-align: center; }
-        .guessrow { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; }
-        .guessbtn { width: 52px; height: 52px; border-radius: 11px; border: 1px solid var(--line);
-          background: var(--panel2); color: var(--text); font-family: 'Chivo Mono', monospace; font-size: 20px;
-          cursor: pointer; transition: all .12s; }
-        .guessbtn:hover { border-color: var(--accent); color: var(--accent); }
-        .solhead { text-align: center; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; margin: 14px 0 8px; }
-        .sollist { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-height: 168px; overflow-y: auto; }
-        .solpill { font-size: 13px; letter-spacing: .04em; color: var(--text); background: var(--panel2); border-radius: 7px; padding: 4px 10px; }
-        .reveal { display: flex; justify-content: center; align-items: center; gap: 9px; font-size: 13px; color: var(--dim); }
-        .reveal .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
-          border-radius: 999px; font-weight: 500; color: var(--text); background: var(--panel2);
-          box-shadow: inset 0 0 0 1px var(--cdot); }
-        .reveal .tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cdot); }
-        .recapbar { display: flex; align-items: center; gap: 10px; margin: 12px 2px; color: var(--dim); font-size: 13px; }
-        .rtrack { flex: 1; height: 4px; border-radius: 2px; background: var(--panel2); overflow: hidden; }
-        .rfill { height: 100%; background: var(--accent); transition: width .2s; }
-        .restart { background: var(--accent); color: #ffffff; border: none; border-radius: 9px;
-          padding: 10px 22px; font-weight: 600; font-size: 14px; cursor: pointer; font-family: inherit; margin-top: 14px; }
-        .panelrow { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 18px; }
-        @media (min-width: 700px) { .panelrow { grid-template-columns: 3fr 2fr; } }
-        .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(22,30,25,.04); }
-        .card h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--faint);
-          text-transform: uppercase; letter-spacing: .1em; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; color: var(--faint); font-weight: 500; font-size: 11px; padding: 4px 6px; }
-        td { padding: 5px 6px; border-top: 1px solid var(--line); color: var(--dim); font-variant-numeric: tabular-nums; }
-        td.name { color: var(--text); }
-        tr.setrow { cursor: pointer; }
-        tr.setrow:hover td { color: var(--text); }
-        .chev { color: var(--faint); font-size: 10px; margin-left: 8px; }
-        .casegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-          gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-        .casecard { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-          padding: 8px 8px 7px; text-align: center; }
-        .casecard .pyranet { max-width: 78px; }
-        .casenums { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
-        .casenums .mono { font-size: 13px; color: var(--text); }
-        .casesub { font-size: 10px; color: var(--faint); }
-        td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
-        .mono { font-family: 'Chivo Mono', monospace; }
-        .times { display: flex; flex-wrap: wrap; gap: 6px; }
-        .timepill { font-family: 'Chivo Mono', monospace; font-size: 12px; padding: 3px 9px;
-          border-radius: 7px; background: var(--panel2); color: var(--dim); border-left: 2px solid var(--cdot); }
-        .empty { color: var(--faint); font-size: 13px; }
-        .settings { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
-          padding: 14px 16px; margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 18px; align-items: center; font-size: 13px; color: var(--dim); }
-        .danger { background: none; border: 1px solid #e3c0bc; color: #b04a42; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 12px; }
-        .danger:hover { background: #faf0ee; }
-        .loading { color: var(--dim); text-align: center; padding: 80px 0; font-size: 14px; }
-        .casename { color: var(--text); font-weight: 500; }
-        .algbtn { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 999px;
-          padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; }
-        .algbtn:hover { color: var(--text); border-color: var(--dim); }
-        .casecard.click { cursor: pointer; transition: border-color .12s; }
-        .casecard.click:hover { border-color: var(--dim); }
-        .overlay { position: fixed; inset: 0; background: rgba(28,34,30,.34); display: flex;
-          align-items: center; justify-content: center; padding: 18px; z-index: 50; }
-        .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-          width: 100%; max-width: 580px; max-height: 84vh; overflow-y: auto; padding: 20px 22px;
-          box-shadow: 0 12px 40px rgba(22,30,25,.18); cursor: default; }
-        .modalhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-        .modaltitle { font-size: 18px; font-weight: 600; margin-bottom: 7px; }
-        .modal .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 12px;
-          border-radius: 999px; font-weight: 500; color: var(--text); background: var(--panel2);
-          box-shadow: inset 0 0 0 1px var(--cdot); }
-        .modal .tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cdot); }
-        .closebtn { background: none; border: none; color: var(--faint); font-size: 22px; cursor: pointer;
-          line-height: 1; padding: 2px 6px; font-family: inherit; }
-        .closebtn:hover { color: var(--text); }
-        .panelimg { display: flex; justify-content: center; margin: 6px 0 14px; }
-        .panelimg .pyranet { max-width: 150px; }
-        .panelimg.small { margin: 0; }
-        .panelimg.small .pyranet { max-width: 92px; }
-        .alggroup { margin-bottom: 14px; }
-        .grouphead { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--faint);
-          font-weight: 600; margin-bottom: 6px; }
-        .bartag { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--dim); margin-left: 6px; }
-        .alglist { display: flex; flex-direction: column; gap: 4px; }
-        .algrow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-          padding: 6px 10px; background: var(--panel2); border-radius: 8px; }
-        .algrow .alg { font-size: 13.5px; color: var(--text); letter-spacing: .04em; }
-        .algrow .algname { font-size: 11px; color: var(--faint); white-space: nowrap; }
-        .presrow { display: flex; gap: 14px; align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--line); }
-        .presbody { flex: 1; }
-        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-      `}</style>
 
       <div className="frame">
         <header>
@@ -1467,6 +1325,8 @@ export default function L5ETrainer() {
                   : "No solutions at the selected lengths for these goals — pick other lengths.")
                 : mode === "recog" ? "Enter at least one valid offset above to start."
                 : selected.size === 0 ? "Select at least one set to start."
+                : ([...selected].some((id) => SET_BY_ID[id].group === "L5E") && l5eBars.size === 0 && !(selected.has("l4e") && l4eSlots.size > 0)) ? "Select at least one bar to start."
+                : (selected.has("l4e") && l4eSlots.size === 0 && !([...selected].some((id) => SET_BY_ID[id].group === "L5E") && l5eBars.size > 0)) ? "Select at least one slot to start."
                 : "Enable at least one case to start."}
             </div>
           </div>

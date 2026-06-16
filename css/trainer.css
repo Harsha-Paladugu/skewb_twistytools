@@ -186,5 +186,41 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .helpsec h4 { margin: 14px 0 4px; font-size: 13.5px; color: var(--txt); }
 .helpsec p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--mut); }
 
+/* collapsible set groups + per-case picker (Drill/Recap) */
+.setgrp { margin-bottom: 8px; }
+.setgrp > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 2px; user-select: none; }
+.setgrp > summary::-webkit-details-marker { display: none; }
+.setgrp > summary::before { content: "\25B8"; color: var(--dimc); font-size: 11px; }
+.setgrp[open] > summary::before { content: "\25BE"; }
+.setgrp > summary .ct { color: var(--dimc); font: 500 11px var(--monof); }
+.casepick { margin: 2px 0 6px; }
+.casetoggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
+  color: var(--mut); font: inherit; font-size: 13.5px; padding: 5px 2px; }
+.casetoggle:hover { color: var(--txt); }
+.casetoggle .chev { color: var(--dimc); font-size: 11px; margin: 0; }
+.casetoggle .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.casetoggle .ct { color: var(--dimc); font: 500 11px var(--monof); }
+.caselistwrap { border-left: 1px solid var(--line2); padding: 6px 0 6px 12px; margin: 2px 0 8px 6px; }
+
+/* Solution trainer: move-count guesser + optimal-solution list */
+.guessrow { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; }
+.guessbtn { width: 52px; height: 52px; border-radius: 11px; border: 1px solid var(--line2);
+  background: var(--panel2); color: var(--txt); font: 20px var(--monof); cursor: pointer; transition: all .15s ease; }
+.guessbtn:hover { border-color: var(--yellow); color: var(--yellow); }
+.solhead { text-align: center; color: var(--dimc); font-size: 11.5px; text-transform: uppercase;
+  letter-spacing: .1em; font-weight: 600; margin: 14px 0 8px; }
+.sollist { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-height: 168px; overflow-y: auto; }
+.solpill { font: 500 13px var(--monof); letter-spacing: .04em; color: var(--txt);
+  background: var(--panel2); border-radius: 7px; padding: 4px 10px; }
+.timer.good { color: var(--green); font-size: clamp(40px, 8vw, 64px); }
+.timer.bad { color: var(--red); font-size: clamp(40px, 8vw, 64px); }
+
+/* pseudo-offset input (Solution/Recog) — same field language as .psoinp */
+.offsetin { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; color: var(--txt);
+  font-family: var(--monof); outline: none; margin-left: 2px; padding: .5em .8em; font-size: 12.5px; width: 210px; }
+.offsetin:focus { border-color: var(--yellow); }
+.offsetbad { font-size: 11.5px; color: var(--red); }
+
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

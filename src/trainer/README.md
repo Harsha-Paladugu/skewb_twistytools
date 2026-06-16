@@ -24,7 +24,11 @@ http://localhost:8000/trainer-dev.html). The dev harness uses an isolated
 - Mounts at `#root` (React 18 `createRoot`).
 - Reads/writes its whole state via `window.storage` (async `get`/`set`) under
   the single key `l5e-trainer-v2`.
-- Self-contained: no dependency on the site's `OOEngine`/`OORender`.
+- No JS dependency on the site's `OOEngine`/`OORender`.
+- Styling comes from `css/site.css` + `css/trainer.css` (the same files the live
+  page loads); the component carries no inline `<style>`. `trainer-dev.html`
+  loads both so the dev build matches the site. New trainer-only classes live in
+  `css/trainer.css`.
 
 ## Status
 This source is the **base** the live bundle grew from; the live `js/trainer.js`
