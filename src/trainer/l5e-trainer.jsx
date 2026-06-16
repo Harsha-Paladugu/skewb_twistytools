@@ -603,6 +603,7 @@ export default function L5ETrainer() {
   const [goals, setGoals] = useState(() => new Set(["v", "pv", "tl4e"])); // which goal types the Solution union includes
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(true);  // drill/recap config card open?
+  const lastAlgoMode = useRef("drill");              // remembers Drill vs Recap within the Algorithm tab
 
   const [current, setCurrent] = useState(null); // {scramble, set, caseKey, render, uTwist}
   const [phase, setPhase] = useState("ready");
@@ -1117,6 +1118,8 @@ export default function L5ETrainer() {
     try { window.storage.set(STORE_KEY, JSON.stringify({ caseStats: {}, l5eBars: [...l5eBars], l4eSlots: [...l4eSlots], selected: [...selected], mode, vlen: [...vlenSel], goals: [...goals], caseSel: [...caseSel], caseKnown: [...caseKnown], scope, setupOpen, vfs: {}, pso })).catch(() => {}); } catch (e) {}
   };
 
+  useEffect(() => { if (mode === "drill" || mode === "recap") lastAlgoMode.current = mode; }, [mode]);
+
   return (
     <div className="app">
 
@@ -1138,16 +1141,21 @@ export default function L5ETrainer() {
 
         {/* mode tabs — the primary axis, first */}
         <div className="modes modetabs">
-          <button className={"mode" + (mode === "drill" ? " on" : "")} onClick={() => setMode("drill")}>Drill</button>
-          <button className={"mode" + (mode === "recap" ? " on" : "")} onClick={() => setMode("recap")}>Recap</button>
+          <button className={"mode" + (mode === "drill" || mode === "recap" ? " on" : "")}
+            onClick={() => { if (mode !== "drill" && mode !== "recap") setMode(lastAlgoMode.current); }}>Algorithm</button>
           <button className={"mode" + (mode === "solution" ? " on" : "")} onClick={() => setMode("solution")}>Solution</button>
           <button className={"mode" + (mode === "recog" ? " on" : "")} onClick={() => setMode("recog")}>Recog</button>
         </div>
 
-        {/* ---------- Drill / Recap controls ---------- */}
+        {/* ---------- Algorithm trainer: Drill / Recap ---------- */}
         {(mode === "drill" || mode === "recap") && (
           <>
             <div className="chips" style={{ alignItems: "center" }}>
+              <div className="modes">
+                {[["drill", "Drill"], ["recap", "Recap"]].map(([v, l]) => (
+                  <button key={v} className={"mode" + (mode === v ? " on" : "")} onClick={() => setMode(v)}>{l}</button>
+                ))}
+              </div>
               <span className="grouplabel">practice</span>
               <div className="modes">
                 {[["all", "All"], ["learning", "Learning"], ["known", "Known"]].map(([v, l]) => (
