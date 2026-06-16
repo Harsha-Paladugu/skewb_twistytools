@@ -784,6 +784,40 @@ export default function L5ETrainer() {
     return id === "l4e" ? pools["l4e-" + bar] : pools[id];
   }, [bar]);
 
+  // Per-case selection, keyed by case NAME. caseSel holds DISABLED case names,
+  // so a case is generated unless it's explicitly turned off (new cases default
+  // to on). A single named case spans several canonical states (mirror /
+  // rotation / AUF variants); they are toggled together as one case.
+  // (Declared before nextDrill/startRecap, which reference casesOf in their deps.)
+  const nmId = (setId, name) => setId + CASE_SEP + name;
+  const caseEnabled = (setId, name) => !caseSel.has(nmId(setId, name));
+  const toggleCase = (setId, name) => {
+    setCaseSel((s) => { const n = new Set(s); const k = nmId(setId, name); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  };
+  // a set's named cases (deduped, sorted by name); each carries its state keys
+  const casesOf = useCallback((setId) => {
+    const p = poolOf(setId); if (!p) return [];
+    const byName = new Map();
+    for (const ck of p.classes.keys()) {
+      const name = SHEET.CNAME[ck] || ck;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(ck);
+    }
+    return [...byName.entries()].map(([name, keys]) => ({ name, keys }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [poolOf]);
+  const setAllCases = (setId, enable) => {
+    setCaseSel((s) => {
+      const n = new Set(s);
+      for (const { name } of casesOf(setId)) { const k = nmId(setId, name); if (enable) n.delete(k); else n.add(k); }
+      return n;
+    });
+  };
+  const enabledCount = useCallback((setId) => {
+    const all = casesOf(setId);
+    return all.length - all.filter(({ name }) => caseSel.has(nmId(setId, name))).length;
+  }, [casesOf, caseSel]);
+
   const nextDrill = useCallback(() => {
     // enabled classes only, weighted by how many physical states each holds
     const entries = [];
@@ -1066,39 +1100,6 @@ export default function L5ETrainer() {
       return n;
     });
   };
-
-  // Per-case selection, keyed by case NAME. caseSel holds DISABLED case names,
-  // so a case is generated unless it's explicitly turned off (new cases default
-  // to on). A single named case spans several canonical states (mirror /
-  // rotation / AUF variants); they are toggled together as one case.
-  const nmId = (setId, name) => setId + CASE_SEP + name;
-  const caseEnabled = (setId, name) => !caseSel.has(nmId(setId, name));
-  const toggleCase = (setId, name) => {
-    setCaseSel((s) => { const n = new Set(s); const k = nmId(setId, name); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  };
-  // a set's named cases (deduped, sorted by name); each carries its state keys
-  const casesOf = useCallback((setId) => {
-    const p = poolOf(setId); if (!p) return [];
-    const byName = new Map();
-    for (const ck of p.classes.keys()) {
-      const name = SHEET.CNAME[ck] || ck;
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name).push(ck);
-    }
-    return [...byName.entries()].map(([name, keys]) => ({ name, keys }))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }, [poolOf]);
-  const setAllCases = (setId, enable) => {
-    setCaseSel((s) => {
-      const n = new Set(s);
-      for (const { name } of casesOf(setId)) { const k = nmId(setId, name); if (enable) n.delete(k); else n.add(k); }
-      return n;
-    });
-  };
-  const enabledCount = useCallback((setId) => {
-    const all = casesOf(setId);
-    return all.length - all.filter(({ name }) => caseSel.has(nmId(setId, name))).length;
-  }, [casesOf, caseSel]);
 
   const counts = useMemo(() => {
     if (!ready) return {};
