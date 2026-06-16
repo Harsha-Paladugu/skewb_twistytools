@@ -511,6 +511,9 @@ const shuffled = (a) => {
   return arr;
 };
 const STORE_KEY = "l5e-trainer-v2";
+// Per-case selection is keyed by case NAME (one entry per named case), since a
+// named case spans several canonical states (mirror/rotation/AUF variants).
+const CASE_SEP = "";
 
 // Solution Trainer goal types: the user picks any combination and the trainer
 // solves to the UNION of the selected goals. Order here is the display order
@@ -723,7 +726,7 @@ export default function L5ETrainer() {
           if (typeof d.pso === "string") setPso(d.pso);
           if (Array.isArray(d.vlen)) setVlenSel(new Set(d.vlen.filter((n) => n >= 1 && n <= 7)));
           if (Array.isArray(d.goals)) { const g = d.goals.filter((x) => GOAL_TYPES.some((t) => t.id === x)); if (g.length) setGoals(new Set(g)); }
-          if (Array.isArray(d.caseSel)) setCaseSel(new Set(d.caseSel.filter((k) => typeof k === "string" && SET_BY_ID[k.split("|")[0]])));
+          if (Array.isArray(d.caseSel)) setCaseSel(new Set(d.caseSel.filter((k) => typeof k === "string" && SET_BY_ID[k.split(CASE_SEP)[0]])));
           if (d.vfs && typeof d.vfs === "object") {
             const v = {};
             for (const [k, st] of Object.entries(d.vfs)) if (/^[1-7]$/.test(k)) v[k] = st;
@@ -787,7 +790,7 @@ export default function L5ETrainer() {
     for (const id of selected) {
       const pool = poolOf(id); if (!pool) continue;
       for (const [ck, sts] of pool.classes) {
-        if (caseSel.has(id + "|" + ck)) continue;
+        if (caseSel.has(id + CASE_SEP + (SHEET.CNAME[ck] || ck))) continue;
         entries.push({ id, ck, sts });
       }
     }
@@ -801,10 +804,12 @@ export default function L5ETrainer() {
   }, [selected, caseSel, makeScramble, poolOf]);
 
   const startRecap = useCallback(() => {
+    // one entry per enabled named case (a representative state), so recap walks
+    // each case once rather than every canonical variant
     const q = [];
     for (const id of [...selected]) {
       if (!poolOf(id)) continue;
-      for (const ck of poolOf(id).classes.keys()) { if (caseSel.has(id + "|" + ck)) continue; q.push({ set: id, caseKey: ck }); }
+      for (const { name, keys } of casesOf(id)) { if (caseSel.has(id + CASE_SEP + name)) continue; q.push({ set: id, caseKey: keys[0] }); }
     }
     const queue = shuffled(q);
     setRecap({ queue, idx: 0 });
@@ -812,7 +817,7 @@ export default function L5ETrainer() {
       const it = queue[0];
       setCurrent(makeScramble(it.set, it.caseKey, poolOf(it.set).classes.get(it.caseKey)));
     } else setCurrent(null);
-  }, [selected, caseSel, makeScramble, poolOf]);
+  }, [selected, caseSel, casesOf, makeScramble, poolOf]);
 
   // Solution Trainer: every optimal solution (all shortest descents of vdist to a V)
   const allOptimalVs = useCallback((s, vdist) => {
@@ -1062,30 +1067,37 @@ export default function L5ETrainer() {
     });
   };
 
-  // Per-case selection. caseSel holds DISABLED cases, so a case is generated
-  // unless it's explicitly turned off (new cases default to on).
-  const ckId = (setId, ck) => setId + "|" + ck;
-  const caseEnabled = (setId, ck) => !caseSel.has(ckId(setId, ck));
-  const toggleCase = (setId, ck) => {
-    setCaseSel((s) => { const n = new Set(s); const k = ckId(setId, ck); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  // Per-case selection, keyed by case NAME. caseSel holds DISABLED case names,
+  // so a case is generated unless it's explicitly turned off (new cases default
+  // to on). A single named case spans several canonical states (mirror /
+  // rotation / AUF variants); they are toggled together as one case.
+  const nmId = (setId, name) => setId + CASE_SEP + name;
+  const caseEnabled = (setId, name) => !caseSel.has(nmId(setId, name));
+  const toggleCase = (setId, name) => {
+    setCaseSel((s) => { const n = new Set(s); const k = nmId(setId, name); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
-  // a set's cases sorted by sheet name
+  // a set's named cases (deduped, sorted by name); each carries its state keys
   const casesOf = useCallback((setId) => {
     const p = poolOf(setId); if (!p) return [];
-    return [...p.classes.keys()]
-      .map((ck) => ({ ck, name: SHEET.CNAME[ck] || ck }))
+    const byName = new Map();
+    for (const ck of p.classes.keys()) {
+      const name = SHEET.CNAME[ck] || ck;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(ck);
+    }
+    return [...byName.entries()].map(([name, keys]) => ({ name, keys }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [poolOf]);
   const setAllCases = (setId, enable) => {
     setCaseSel((s) => {
       const n = new Set(s);
-      for (const { ck } of casesOf(setId)) { const k = ckId(setId, ck); if (enable) n.delete(k); else n.add(k); }
+      for (const { name } of casesOf(setId)) { const k = nmId(setId, name); if (enable) n.delete(k); else n.add(k); }
       return n;
     });
   };
   const enabledCount = useCallback((setId) => {
     const all = casesOf(setId);
-    return all.length - all.filter(({ ck }) => caseSel.has(ckId(setId, ck))).length;
+    return all.length - all.filter(({ name }) => caseSel.has(nmId(setId, name))).length;
   }, [casesOf, caseSel]);
 
   const counts = useMemo(() => {
@@ -1338,9 +1350,9 @@ export default function L5ETrainer() {
                         <button className="preset" onClick={() => setAllCases(s.id, false)}>none</button>
                       </div>
                       <div className="chips">
-                        {cases.map(({ ck, name }) => (
-                          <button key={ck} className={"chip" + (caseEnabled(s.id, ck) ? " on" : "")}
-                            style={{ "--cdot": s.color }} onClick={() => toggleCase(s.id, ck)}>
+                        {cases.map(({ name }) => (
+                          <button key={name} className={"chip" + (caseEnabled(s.id, name) ? " on" : "")}
+                            style={{ "--cdot": s.color }} onClick={() => toggleCase(s.id, name)}>
                             <span className="dot" />{name}
                           </button>
                         ))}
