@@ -901,7 +901,7 @@ export default function L5ETrainer() {
   const submitGuess = useCallback((n) => {
     if (!current || current.kind !== "solution" || phase === "stopped") return;
     if (n < current.vlen) {
-      setGuessMsg(`No solution in ${n} ${n === 1 ? "move" : "moves"} — the shortest is longer. Keep looking.`);
+      setGuessMsg(`No solution in ${n} ${n === 1 ? "move" : "moves"}. The shortest is longer, so keep looking.`);
       return;
     }
     const correct = n === current.vlen;
@@ -1272,7 +1272,7 @@ export default function L5ETrainer() {
                 onChange={(e) => setPso(e.target.value)}
                 onBlur={commitOffsets}
                 onKeyDown={(e) => { if (e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); e.target.blur(); } }}
-                placeholder="add more — e.g. L R', R U" aria-label="extra pseudo offsets" />
+                placeholder="add more, e.g. L R', R U" aria-label="extra pseudo offsets" />
               {eff.badText ? <span className="offsetbad">invalid offset (plain moves, ≤4 each)</span>
                 : !eff.valid ? <span className="offsetbad">enable 1-move pseudos or add an offset</span>
                 : <span className="offsetbad" style={{ color: "var(--faint)" }}>{eff.list.length} offset{eff.list.length === 1 ? "" : "s"}</span>}
@@ -1322,13 +1322,13 @@ export default function L5ETrainer() {
                   goals.size === 0 ? "Select at least one goal type (V, Pseudo V, TL4E-B) to start."
                   : (goals.size === 1 && goals.has("pv") && !effectiveOffsets(pso, pseudoAll).valid) ? "Pick a pseudo offset above to start (enable 1-move pseudos or add one)."
                   : vlenSel.size === 0 ? "Select at least one length to start."
-                  : "No solutions at the selected lengths for these goals — pick other lengths.")
+                  : "No solutions at the selected lengths for these goals. Pick other lengths.")
                 : mode === "recog" ? "Pick a pseudo offset above to start (enable 1-move pseudos or add one)."
                 : selected.size === 0 ? "Select at least one set to start."
                 : ([...selected].some((id) => SET_BY_ID[id].group === "L5E") && l5eBars.size === 0 && !(selected.has("l4e") && l4eSlots.size > 0)) ? "Select at least one bar to start."
                 : (selected.has("l4e") && l4eSlots.size === 0 && !([...selected].some((id) => SET_BY_ID[id].group === "L5E") && l5eBars.size > 0)) ? "Select at least one slot to start."
-                : scope === "learning" ? "Nothing left to learn here — every enabled case is marked known. Switch practice to All or Known, or unmark some cases."
-                : scope === "known" ? "No cases marked known yet in this selection — mark some known, or switch practice to All."
+                : scope === "learning" ? "Nothing left to learn here. Every enabled case is marked known, so switch practice to All or Known, or unmark some cases."
+                : scope === "known" ? "No cases marked known yet in this selection. Mark some known, or switch practice to All."
                 : "Enable at least one case to start."}
             </div>
           </div>
@@ -1367,7 +1367,7 @@ export default function L5ETrainer() {
               <>
                 <div className={"timer" + (last.correct ? " good" : " bad")}>{last.correct ? "Correct" : "Not optimal"}</div>
                 <div className="reveal">
-                  {!last.correct ? <span>you picked {last.guess} —</span> : null}
+                  {!last.correct ? <span>you picked {last.guess},</span> : null}
                   <span>optimal is</span>
                   <span className="tag" style={{ "--cdot": "var(--accent)" }}>
                     <span className="dot" />{last.vlen} {last.vlen === 1 ? "move" : "moves"}
@@ -1396,7 +1396,7 @@ export default function L5ETrainer() {
         ) : (
           <div className="stage" onPointerDown={(e) => { e.preventDefault(); trigger(); }}>
             <div className="stagegrid">
-              <div className="scramble">{current.scramble || "—"}</div>
+              <div className="scramble">{current.scramble || "-"}</div>
               <PyraminxNet state={current.render} uTwist={current.uTwist} />
             </div>
             <div className={"timer" + (phase === "running" ? " running" : "")}>{fmt(elapsed)}</div>
@@ -1436,7 +1436,7 @@ export default function L5ETrainer() {
           <div className="card">
             {mode === "solution" ? (
               <>
-                <h3>Solution Trainer — accuracy by length</h3>
+                <h3>Solution Trainer: accuracy by length</h3>
                 {Object.keys(vfs).length === 0 ? (
                   <div className="empty">No answers yet. Pick the move count and your accuracy lands here, by solution length.</div>
                 ) : (
@@ -1556,7 +1556,7 @@ export default function L5ETrainer() {
                 {(() => {
                   const opts = s.group === "L4E" ? L4E_SLOTS : L5E_BARS;
                   const labels = anglesActive(s.id).map((g) => (opts.find((o) => o.id === g) || {}).label).filter(Boolean);
-                  return <div className="hint" style={{ textAlign: "left", margin: "0 0 8px" }}>known is per {s.group === "L4E" ? "slot" : "bar"} — editing: {labels.length ? labels.join(", ") : "(none selected)"}</div>;
+                  return <div className="hint" style={{ textAlign: "left", margin: "0 0 8px" }}>known is per {s.group === "L4E" ? "slot" : "bar"}. editing: {labels.length ? labels.join(", ") : "(none selected)"}</div>;
                 })()}
                 <div className="presets" style={{ margin: "0 0 10px" }}>
                   <button className="preset" onClick={() => setAllCases(s.id, true)}>all</button>

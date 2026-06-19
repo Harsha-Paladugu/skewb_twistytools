@@ -221,13 +221,13 @@
   // validate a candidate alg for a case -> {ok, side} | {ok:false, reason}
   function validate(subsetKey, c, alg) {
     const cs = caseStateOf(alg);
-    if (!cs) return { ok: false, reason: 'Not a valid algorithm, or it doesn’t solve to a single state.' };
+    if (!cs) return { ok: false, reason: 'That isn’t a valid algorithm, or it doesn’t solve to a single state.' };
     const set = caseCanon(subsetKey, c);
     // No reference alg means we can't confirm the new one solves THIS case (it
     // could solve a different position). Refuse rather than accept blindly.
-    if (!set.size) return { ok: false, reason: 'No reference algorithm for this case yet — can’t auto-check it.' };
+    if (!set.size) return { ok: false, reason: 'There’s no reference algorithm for this case yet, so we can’t check it.' };
     const canon = realCanonKey(cs, cs.u);
-    if (!set.has(canon)) return { ok: false, reason: 'Valid moves, but they don’t solve this case.' };
+    if (!set.has(canon)) return { ok: false, reason: 'Those are valid moves, but they don’t solve this case.' };
     // NOTE: realCanonKey ignores center twist, so for paired TL4E (+/-) this
     // confirms the alg solves the case's EDGES but cannot verify the twist sign —
     // see the file header caveat. The sign comes from which variant the admin adds to.
@@ -259,7 +259,7 @@
         // Don't silently discard the user's draft — set it aside and tell them.
         console.error('algs: unreadable draft, set aside as ' + DRAFT_KEY + '.bad', e);
         try { localStorage.setItem(DRAFT_KEY + '.bad', raw); } catch (_) {}
-        draftError = 'Your saved draft was unreadable and has been set aside (' + DRAFT_KEY + '.bad). Starting from the published algs.';
+        draftError = 'We couldn’t read your saved draft, so we set it aside (' + DRAFT_KEY + '.bad) and started from the published algs.';
       }
     },
     async save(subsetKey, caseName) {
@@ -271,14 +271,14 @@
         const raw = localStorage.getItem(DRAFT_KEY);
         console.error('algs: unreadable draft on save, set aside as ' + DRAFT_KEY + '.bad', e);
         try { localStorage.setItem(DRAFT_KEY + '.bad', raw); } catch (_) {}
-        draftError = 'Your saved draft was unreadable and has been set aside (' + DRAFT_KEY + '.bad). Continuing from your current edits.';
+        draftError = 'We couldn’t read your saved draft, so we set it aside (' + DRAFT_KEY + '.bad) and kept your current edits.';
       }
       m[caseId(subsetKey, caseName)] = { subset: subsetKey, case: caseName, added: ov.added, removed: [...ov.removed], order: ov.order || [] };
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(m)); draftError = ''; return true; }
       catch (e) {
         // Don't pretend the edit persisted — make the failure visible.
         console.error('algs: draft save failed', e);
-        draftError = 'Draft could NOT be saved (storage full or blocked). Your edits live only in this tab and will be lost on reload — Export now to keep them.';
+        draftError = 'We couldn’t save your draft (storage may be full or blocked). Your edits only live in this tab and will be lost on reload, so export now to keep them.';
         if (typeof refreshStatus === 'function') refreshStatus();
         return false;
       }
@@ -430,12 +430,12 @@
   // add-an-alg box. `targets` is one or more {subKey, c}; the entered alg is filed
   // under whichever target it actually solves (auto-routes R/L or +/-).
   function adminAdder(targets, card, rerender) {
-    const input = h('input', { class: 'mono addin', type: 'text', placeholder: 'Add an algorithm — auto-checked', spellcheck: 'false' });
+    const input = h('input', { class: 'mono addin', type: 'text', placeholder: 'Add an algorithm (we check it for you)', spellcheck: 'false' });
     const fb = h('span', { class: 'addfb' });
     // returns { t, side } on the first target the alg solves, else { reason }
     // carrying validate()'s specific diagnostic (so the UI shows WHY it failed).
     const check = (alg) => {
-      let reason = 'Not a valid algorithm, or it doesn’t solve this case.';
+      let reason = 'That isn’t a valid algorithm, or it doesn’t solve this case.';
       for (const t of targets) { const v = validate(t.subKey, t.c, alg); if (v.ok) return { t, side: v.side }; reason = v.reason; }
       return { reason };
     };
@@ -611,7 +611,7 @@
     main = h('div', { class: 'algmain' });
     app.appendChild(h('div', { class: 'algwrap' },
       h('div', { class: 'alghead' }, h('h1', null, 'Algorithms'),
-        h('p', { class: 'sub' }, 'Pick L4E, TL4E or L5E, then a subset. Search to find a case fast; admins can add or remove algs, and each new one is checked automatically.')),
+        h('p', { class: 'sub' }, 'Pick L4E, TL4E or L5E, then a subset. Use search to find a case fast.')),
       tabs, toolbar,
       h('div', { class: 'algcols' }, h('aside', { class: 'algsidewrap' }, sideNav), main)));
 
@@ -630,7 +630,7 @@
       const keys = Object.keys(SUBSETMAP);
       const total = keys.reduce((n, k) => n + SUBSETMAP[k].cases.length, 0);
       statusEl.textContent = keys.length + ' subsets · ' + total + ' cases'
-        + (admin ? ' · editing as admin — local draft, use Export to publish' : '');
+        + (admin ? ' · editing as admin. Changes save to this browser; use Export to publish.' : '');
       statusEl.className = 'algstatus' + (admin ? ' admin' : '');
     }
     const exp = document.querySelector('.export'); if (exp) exp.style.display = admin ? '' : 'none';
@@ -642,7 +642,7 @@
       const res = await fetch('data/pyraminx_algs.json');
       DATA = await res.json();
     } catch (e) {
-      app.appendChild(h('div', { class: 'algerr' }, 'Could not load data/pyraminx_algs.json.'));
+      app.appendChild(h('div', { class: 'algerr' }, 'We couldn’t load the algorithms. Try reloading the page.'));
       return;
     }
     buildModel();

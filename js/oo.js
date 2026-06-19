@@ -1,4 +1,4 @@
-/* Pyraminx.net — OO census app. Expects OOEngine, OORender, SiteNavbar, OOAccount (auth) and OO_CONFIG (config.js). */
+/* Pyraminx.net — OO solutions app. Expects OOEngine, OORender, SiteNavbar, OOAccount (auth) and OO_CONFIG (config.js). */
 /* Pyraminx OO — app layer. Expects window.OOEngine (engine) + window.OORender (net renderer). */
 (function () {
 const E = window.OOEngine, R = window.OORender;
@@ -127,10 +127,10 @@ function variantsOf(classId) { // unique rotation variants of a class, each with
 // variant of either side of the pair.
 function verifySolution(text, pair) {
   const parsed = E.parseAlg(text);
-  if (!parsed) return { ok: false, error: 'Couldn\u2019t read that \u2014 use U L R B (with w, \u2032 or 2) and rotations [u] [l] [r] [b] or y. Tips are ignored.' };
+  if (!parsed) return { ok: false, error: 'We couldn\u2019t read that. Use U L R B (with w, \u2032 or 2) and rotations [u] [l] [r] [b] or y. Tips are ignored.' };
   const moves = E.countMoves(parsed);
   if (moves === 0) return { ok: false, error: 'Add some moves first.' };
-  if (moves > 15) return { ok: false, error: 'That\u2019s ' + moves + ' moves \u2014 submissions have to be 15 or fewer.' };
+  if (moves > 15) return { ok: false, error: 'That\u2019s ' + moves + ' moves. Solutions have to be 15 or fewer.' };
   for (const side of ['a', 'b']) {
     if (!pair[side]) continue;
     for (const v of pair[side].variants) {
@@ -138,7 +138,7 @@ function verifySolution(text, pair) {
       if (E.eq(end, E.solved())) return { ok: true, side, moves };
     }
   }
-  return { ok: false, moves, error: 'Doesn\u2019t solve this scramble \u2014 checked from every rotation of both mirrors.' };
+  return { ok: false, moves, error: 'That doesn\u2019t solve this scramble. We checked it from every rotation of both mirrors.' };
 }
 function pairOf(classId) {
   const a = { id: classId, state: E.unidx(classId) };
@@ -341,16 +341,16 @@ function nav() {
   const route = location.hash || '#/';
   const u = DB.user;
   const sub = [
-    { label: 'Census', href: '#/', on: route === '#/' || route.startsWith('#/c/') },
+    { label: 'Solutions', href: '#/', on: route === '#/' || route.startsWith('#/c/') },
     { label: 'Browse by depth', href: '#/browse', on: route.startsWith('#/browse') },
     DB.isMod ? { label: 'Moderation', href: '#/mod', on: route.startsWith('#/mod') } : null,
     { label: 'How it works', href: '#/about', on: route.startsWith('#/about') },
   ].filter(Boolean);
   const right = h('div', { class: 'authbox' },
-      DB.mode === 'demo' ? h('span', { class: 'demobadge', title: 'No Firebase config yet \u2014 data stays in this browser' }, 'demo mode') : null,
+      DB.mode === 'demo' ? h('span', { class: 'demobadge', title: 'No Firebase config yet. Your data stays in this browser.' }, 'demo mode') : null,
       u ? h('span', { class: 'whoami' }, u.name || u.email) : null,
       u ? h('button', { class: 'ghost', onclick: () => DB.signOut() }, 'Sign out')
-        : h('button', { class: 'primary', onclick: () => DB.signIn().catch(e => toast(e.message)) }, 'Sign in with Google'));
+        : h('button', { class: 'primary', onclick: () => DB.signIn().catch(() => toast('Sign-in didn’t go through. Please try again.')) }, 'Sign in with Google'));
   return new SiteNavbar({ active: 'oo', sub, right }).element();
 }
 async function renderInner() {
@@ -362,7 +362,7 @@ async function renderInner() {
   // surface it as a persistent banner (re-rendered on every navigation), not a
   // transient toast. demoDB never fails, so this only shows in broken live mode.
   if (DB && DB.failed) main.appendChild(h('div', { class: 'card error', style: 'margin:16px auto;max-width:680px' },
-    'Couldn’t connect to the database — sign-in, submissions and the solved map are unavailable. ' + DB.failed));
+    'We couldn’t connect to the database, so sign-in, submitting, and the solved map aren’t available right now. Try reloading the page.'));
   if (!T.ready) { const b = $('#boot-status'); if (b) main.appendChild(b.cloneNode(true)); return; }
   try {
     if (route.startsWith('#/c/')) await pageClass(main, parseInt(route.slice(4), 10));
@@ -371,7 +371,7 @@ async function renderInner() {
     else if (route.startsWith('#/about')) pageAbout(main);
     else await pageHome(main);
   } catch (err) {
-    main.appendChild(h('div', { class: 'card error' }, 'Something went wrong rendering this page: ' + err.message));
+    main.appendChild(h('div', { class: 'card error' }, 'Something went wrong loading this page. Try reloading.'));
   }
 }
 
@@ -384,7 +384,7 @@ async function pageHome(main) {
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'The best human solution to every Pyraminx position.'),
     h('p', { class: 'lede' },
-      'Fold every rotation together and the Pyraminx comes down to ' + fmt(T.reps.length) + ' positions \u2014 a position and its mirror count as one solve. ',
+      'Once you fold rotations together, the Pyraminx has ' + fmt(T.reps.length) + ' positions, and a position and its mirror count as one. ',
       'Paste a scramble to look yours up, or browse by depth and claim one nobody has solved yet.')));
   main.appendChild(h('section', { class: 'progressblock' },
     h('div', { class: 'barwrap', role: 'progressbar', 'aria-valuenow': (pct*100).toFixed(2), 'aria-valuemin': '0', 'aria-valuemax': '100' },
@@ -393,7 +393,7 @@ async function pageHome(main) {
       h('b', null, fmt(stats.done)), ' solved \u00b7 ', h('b', null, fmt(stats.total - stats.done)), ' to go \u00b7 ',
       h('b', { class: 'pct' }, (pct * 100).toFixed(pct > 0 && pct < 0.0001 ? 4 : 2) + '%'), ' complete')));
   const searchBox = h('div', { class: 'searchrow' },
-    h('input', { class: 'searchin mono', placeholder: "Paste a scramble \u2014 tips like l r b u are ignored",
+    h('input', { class: 'searchin mono', placeholder: "Paste a scramble (tips like l r b u are ignored)",
       'aria-label': 'scramble search',
       onkeydown: ev => { if (ev.key === 'Enter') doSearch(ev.target); } }),
     h('button', { class: 'primary', onclick: ev => doSearch(ev.target.parentElement.querySelector('input')) }, 'Find this scramble'));
@@ -401,7 +401,7 @@ async function pageHome(main) {
     const txt = input.value.trim();
     if (!txt) return;
     const parsed = E.parseAlg(txt);
-    if (!parsed) { toast('Couldn\u2019t read that scramble \u2014 use U L R B with \u2032 or 2 (tips are ignored).'); return; }
+    if (!parsed) { toast('We couldn\u2019t read that scramble. Use U L R B with \u2032 or 2 (tips are ignored).'); return; }
     const st = E.applyParsed(parsed, E.solved(), T.syms, T.rotByCorner);
     lastSearch = { ix: E.idx(st), text: txt.replace(/\s+/g, ' ') };
     const target = '#/c/' + lastSearch.ix;
@@ -416,7 +416,7 @@ async function pageHome(main) {
         const o = Math.floor(Math.random() * T.reps.length);
         if (!(bm[o >> 3] & (1 << (o & 7)))) { location.hash = '#/c/' + pairIdOf(T.reps[o]); return; }
       }
-      toast('Couldn\u2019t find an unsolved position \u2014 looks like they\u2019re all done.');
+      toast('We couldn\u2019t find an unsolved position. Looks like they\u2019re all done!');
     } }, 'Take me to an unsolved position'),
     h('a', { class: 'ghost', href: '#/about' }, 'How it works')));
 }
@@ -450,14 +450,14 @@ function sidePanel(side, label, doneSet, exactView) {
         netBox.innerHTML = is3d ? R.iso3dSVG(shownState, 215, vs.M) : R.netSVG(shownState, 330);
         netBox.classList.toggle('grab', is3d);
         // keyboard access: only the 3D view is interactive, so only it is focusable
-        if (is3d) { netBox.setAttribute('tabindex', '0'); netBox.setAttribute('aria-label', '3D puzzle view \u2014 arrow keys rotate, Home or Escape resets'); }
+        if (is3d) { netBox.setAttribute('tabindex', '0'); netBox.setAttribute('aria-label', '3D puzzle view. Arrow keys rotate, Home or Escape resets.'); }
         else { netBox.removeAttribute('tabindex'); netBox.removeAttribute('aria-label'); }
       };
       const setMode = (mode) => {
         vs.mode = mode; const is3d = mode === '3d';
         b3.classList.toggle('on', is3d); b2.classList.toggle('on', !is3d);
         b3.setAttribute('aria-pressed', is3d ? 'true' : 'false'); b2.setAttribute('aria-pressed', is3d ? 'false' : 'true');
-        hint.textContent = is3d ? 'drag or arrow keys to rotate \u00b7 double-click or Home to reset' : '';
+        hint.textContent = is3d ? 'Drag or use arrow keys to rotate. Double-click or press Home to reset.' : '';
         draw();
         if (is3d) netBox.focus();
       };
@@ -497,7 +497,7 @@ function sidePanel(side, label, doneSet, exactView) {
       onclick: () => symPopup(v, i, side.variants.length),
       html: R.netSVG(v.state, 104, { cls: 'oonet thumb', thumb: true }) }));
   });
-  wrap.append(h('div', { class: 'symhead' }, side.variants.length + (side.variants.length === 1 ? ' unique view' : ' unique views'), h('span', { class: 'hintt' }, ' \u2014 click any view to see it up close')), strip);
+  wrap.append(h('div', { class: 'symhead' }, side.variants.length + (side.variants.length === 1 ? ' unique view' : ' unique views'), h('span', { class: 'hintt' }, '. Click any view to see it up close.')), strip);
   return wrap;
 }
 function symPopup(v, i, total) {
@@ -538,7 +538,7 @@ function symPopup(v, i, total) {
   closeX.focus();                                          // move focus into the dialog
 }
 async function pageClass(main, anyId) {
-  if (!(anyId >= 0) || anyId >= E.NSLOTS || T.dist[anyId] < 0) { main.appendChild(h('div', { class: 'card error' }, 'That position doesn\u2019t exist \u2014 check the link and try again.')); return; }
+  if (!(anyId >= 0) || anyId >= E.NSLOTS || T.dist[anyId] < 0) { main.appendChild(h('div', { class: 'card error' }, 'That position doesn\u2019t exist. Check the link and try again.')); return; }
   const exact = E.unidx(anyId);
   const cid = canonOf(exact);
   const pair = pairOf(cid);
@@ -562,7 +562,7 @@ async function pageClass(main, anyId) {
   const solCard = h('section', { class: 'card solcard' }, h('h3', null, 'Solutions'));
   const approved = sols.filter(s => s.status === 'approved');
   const mine = sols.filter(s => s.status === 'pending');
-  if (!approved.length) solCard.appendChild(h('p', { class: 'empty' }, 'Nobody has claimed this position yet \u2014 yours could be the first. Submit it below.'));
+  if (!approved.length) solCard.appendChild(h('p', { class: 'empty' }, 'Nobody has solved this position yet. Yours could be the first. Submit it below.'));
   for (const s of approved) {
     const mirrored = E.mirrorAlg(s.solution);
     const enteredLeft = s.classId === pair.a.id;
@@ -571,7 +571,7 @@ async function pageClass(main, anyId) {
         h('span', { class: 'soltag' }, pair.self ? 'solution' : (enteredLeft ? 'position' : 'mirror')),
         h('code', { class: 'mono sol' }, s.solution), copyBtn(s.solution)),
       pair.self ? null : h('div', { class: 'solcell' },
-        h('span', { class: 'soltag auto' }, (enteredLeft ? 'mirror' : 'position') + ' \u00b7 auto-mirrored'),
+        h('span', { class: 'soltag auto' }, (enteredLeft ? 'mirror' : 'position') + ' \u00b7 mirrored for you'),
         h('code', { class: 'mono sol' }, mirrored), copyBtn(mirrored)),
       h('div', { class: 'solmeta' }, s.moves + ' moves', s.showName && s.name ? ' \u00b7 by ' + s.name : '')));
   }
@@ -583,12 +583,12 @@ async function pageClass(main, anyId) {
   /* submit */
   const sub = h('section', { class: 'card subcard' }, h('h3', null, 'Submit a solution'));
   if (!DB.user) {
-    sub.appendChild(h('p', null, 'You can browse everything without an account \u2014 sign in with Google only when you want to submit.'));
-    sub.appendChild(h('button', { class: 'primary', onclick: () => DB.signIn().catch(e => toast(e.message)) }, 'Sign in with Google'));
+    sub.appendChild(h('p', null, 'You can browse everything without an account. Sign in with Google when you want to submit a solution.'));
+    sub.appendChild(h('button', { class: 'primary', onclick: () => DB.signIn().catch(() => toast('Sign-in didn’t go through. Please try again.')) }, 'Sign in with Google'));
   } else {
     const ta = h('textarea', { class: 'mono solin', rows: '2',
-      placeholder: "e.g.  [r] L U' Rw B2 U L'   \u2014 rotations free \u00b7 wides & doubles 1 move \u00b7 tips ignored \u00b7 max 15" });
-    const status = h('div', { class: 'verifyline' }, 'Type a solution \u2014 it\u2019s checked live against every rotation of both mirrors.');
+      placeholder: "e.g.  [r] L U' Rw B2 U L'   (rotations free \u00b7 wides & doubles 1 move \u00b7 tips ignored \u00b7 max 15)" });
+    const status = h('div', { class: 'verifyline' }, 'Type a solution. We check it as you go, against every rotation of both mirrors.');
     const nameRow = h('label', { class: 'namerow' },
       h('input', { type: 'checkbox', checked: '' }), ' show my name (', DB.user.name || DB.user.email, ') on this solution');
     const btn = h('button', { class: 'primary', disabled: '' }, 'Submit for review');
@@ -598,7 +598,7 @@ async function pageClass(main, anyId) {
       status.className = 'verifyline ' + (v.ok ? 'good' : (ta.value.trim() ? 'bad' : ''));
       status.textContent = v.ok
         ? '\u2713 Solves the ' + (pair.self || v.side === 'a' ? 'position' : 'mirror') + ' in ' + v.moves + ' moves. Ready to submit.'
-        : (ta.value.trim() ? v.error : 'Type a solution \u2014 it\u2019s checked live against every rotation of both mirrors.');
+        : (ta.value.trim() ? v.error : 'Type a solution. We check it as you go, against every rotation of both mirrors.');
       if (v.ok) btn.removeAttribute('disabled'); else btn.setAttribute('disabled', '');
     };
     ta.addEventListener('input', onInput);
@@ -613,9 +613,9 @@ async function pageClass(main, anyId) {
           scramble: sideObj.scramble, solution: ta.value.trim().replace(/\s+/g, ' '),
           moves: v.moves, name: DB.user.name || DB.user.email, showName: nameRow.querySelector('input').checked,
         });
-        toast('Submitted \u2014 a moderator will take a look soon.');
+        toast('Thanks! A moderator will review it soon.');
         render();
-      } catch (err) { toast('Submit failed: ' + err.message); btn.removeAttribute('disabled'); }
+      } catch (err) { toast('Something went wrong submitting that. Please try again.'); btn.removeAttribute('disabled'); }
     });
     sub.append(ta, status, nameRow, btn);
   }
@@ -639,7 +639,7 @@ async function pageBrowse(main, route) {
   }
   main.appendChild(h('section', { class: 'browsehead' },
     h('h2', null, 'Every position, sorted by depth'),
-    h('p', { class: 'lede sm' }, 'Depth is the proven minimum number of moves to solve. Click any position to see its mirror, its rotations, and the solutions on record.'),
+    h('p', { class: 'lede sm' }, 'Depth is the fewest moves a position can be solved in. Click any position to see its mirror, its rotations, and the solutions on record.'),
     chips));
 
   const full = T.depthIdx[depth];
@@ -668,7 +668,7 @@ async function pageBrowse(main, route) {
     h('a', { href: '#/browse/' + depth + '/p' + Math.min(pages - 1, pg + 1), class: 'ghost' + (pg >= pages - 1 ? ' off' : '') }, 'next \u2192'),
     h('button', { class: 'ghost', onclick: () => {
       const un = full.filter(o => !isDone(o));
-      if (!un.length) { toast('Every position at this depth is already solved \u2014 try another depth.'); return; }
+      if (!un.length) { toast('Every position at this depth is already solved. Try another depth.'); return; }
       const o = un[Math.floor(Math.random() * un.length)];
       location.hash = '#/c/' + pairIdOf(T.reps[o]);
     } }, 'random unsolved at this depth'));
@@ -677,17 +677,17 @@ async function pageBrowse(main, route) {
 
 /* ---------------- moderation ---------------- */
 async function pageMod(main) {
-  if (!DB.isMod) { main.appendChild(h('div', { class: 'card error' }, 'This page is for moderators \u2014 sign in with a moderator account to review submissions.')); return; }
+  if (!DB.isMod) { main.appendChild(h('div', { class: 'card error' }, 'This page is for moderators. Sign in with a moderator account to review submissions.')); return; }
   const items = await DB.pending();
   const head = h('h2', null, 'Review queue \u00b7 ' + items.length + ' pending');
   main.appendChild(head);
-  if (!items.length) main.appendChild(h('p', { class: 'empty' }, 'Nothing to review right now \u2014 the queue refreshes when you reopen this tab.'));
+  if (!items.length) main.appendChild(h('p', { class: 'empty' }, 'Nothing to review right now. The queue refreshes when you reopen this tab.'));
   for (const s of items) {
     // a malformed submission (out-of-range ids from a direct/forged write) would
     // make pairOf -> E.unidx produce garbage; surface it as rejectable, don't render it.
     if (!(validId(s.classId) && validId(s.partnerId) && validId(s.pairId))) {
       main.appendChild(h('section', { class: 'card modrow' },
-        h('div', { class: 'modbody' }, h('div', { class: 'verifyline bad' }, '✗ malformed submission — out-of-range puzzle ids')),
+        h('div', { class: 'modbody' }, h('div', { class: 'verifyline bad' }, '✗ Broken submission (puzzle ids out of range)')),
         h('div', { class: 'modacts' },
           h('button', { class: 'danger', onclick: async () => { await DB.review(s.id, 'rejected'); toast('Rejected.'); render(); } }, 'Reject'))));
       continue;
@@ -705,8 +705,8 @@ async function pageMod(main) {
       h('div', { class: 'modacts' },
         h('button', { class: 'primary', disabled: v.ok ? null : '', onclick: async ev => {
           ev.target.setAttribute('disabled', '');
-          try { await DB.review(s.id, 'approved'); toast('Approved \u2014 position marked solved.'); render(); }
-          catch (err) { toast('Approve failed: ' + err.message); ev.target.removeAttribute('disabled'); }
+          try { await DB.review(s.id, 'approved'); toast('Approved. Position marked solved.'); render(); }
+          catch (err) { toast('Something went wrong approving that. Please try again.'); ev.target.removeAttribute('disabled'); }
         } }, 'Approve'),
         h('button', { class: 'danger', onclick: async () => { await DB.review(s.id, 'rejected'); toast('Rejected.'); render(); } }, 'Reject'),
         h('a', { class: 'ghost', href: '#/c/' + s.pairId }, 'open position')));
@@ -726,7 +726,7 @@ async function pageMod(main) {
       h('button', { class: 'primary', onclick: async ev => {
         const em = ev.target.parentElement.querySelector('input').value.trim().toLowerCase();
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter a valid email.'); return; }
-        await DB.invite(em); toast('Invited \u2014 they become a moderator the next time they sign in.'); render();
+        await DB.invite(em); toast('Invited. They become a moderator the next time they sign in.'); render();
       } }, 'Add moderator'));
     mc.append(tbl, inv);
     main.appendChild(mc);
@@ -736,26 +736,26 @@ async function pageMod(main) {
 /* ---------------- about ---------------- */
 function pageAbout(main) {
   main.appendChild(h('section', { class: 'card prose' },
-    h('h2', null, 'How Pyraminx OO works'),
-    h('p', null, 'The Pyraminx (ignoring trivial tips) has exactly 933,120 positions, and every one of them can be solved in 11 moves or fewer \u2014 that is proven by computer. What no computer can decide is which short solution feels best in human hands. This site collects the community\u2019s answer, one position at a time.'),
+    h('h2', null, 'How OO solutions work'),
+    h('p', null, 'Ignoring the tips, the Pyraminx has exactly 933,120 positions, and every one can be solved in 11 moves or fewer. That part is proven by computer. What a computer can\u2019t tell you is which short solution feels best in your hands. This page collects the community\u2019s pick, one position at a time.'),
     h('h3', null, 'Positions, rotations and mirrors'),
-    h('p', null, 'Rotating the whole puzzle does not change the solve, so the 933,120 raw states condense into ' + fmt(T.reps.length) + ' positions \u2014 each covering up to 12 rotations, which you can flip through on any position page. Left\u2013right mirror images are different solves with mirrored algorithms, so a position and its mirror are shown side by side: submit either, and the mirrored solution is generated automatically. One approved solution marks both done.'),
+    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, so those 933,120 states come down to ' + fmt(T.reps.length) + ' positions. Each one covers up to 12 rotations, which you can flip through on any position page. A position and its mirror are different solves with mirrored algorithms, so they\u2019re shown side by side. Submit either one and we generate the mirrored version for you. One approved solution marks both as done.'),
     h('h3', null, 'Notation'),
     h('div', { class: 'nottable' },
-      nrow('U L R B', 'face moves \u00b7 1 move each', "U' or U2 both mean the inverse turn \u2014 still 1 move"),
-      nrow('Uw Lw Rw Bw', 'wide moves \u00b7 1 move each', "convention: Rw = L [l\u2032], Lw = R [r\u2032], Uw = B [b\u2032], Bw = U [u\u2032]"),
+      nrow('U L R B', 'face moves \u00b7 1 move each', "U' and U2 both mean the inverse turn, still 1 move"),
+      nrow('Uw Lw Rw Bw', 'wide moves \u00b7 1 move each', "Rw = L [l\u2032], Lw = R [r\u2032], Uw = B [b\u2032], Bw = U [u\u2032]"),
       nrow('[u] [l] [r] [b], y', 'rotations \u00b7 0 moves', 'rotate the whole puzzle; y is the same as [u]'),
-      nrow('u l r b (lowercase)', 'tips \u00b7 ignored', 'pasted scrambles can include tip moves \u2014 they are stripped')),
+      nrow('u l r b (lowercase)', 'tips \u00b7 ignored', 'scrambles can include tip moves; we just strip them out')),
     h('h3', null, 'Submitting and review'),
-    h('p', null, 'Solutions are at most 15 moves and are verified automatically: they must genuinely solve the scramble, viewed from any rotation, on either mirror. A moderator then reviews each submission before it is published \u2014 verification is checked again at review time. The first approved solution claims the position.'),
+    h('p', null, 'Solutions can be up to 15 moves and are checked automatically: they have to really solve the scramble, from any rotation, on either mirror. A moderator then reviews each one before it goes live, and we check it again at that point. The first approved solution claims the position.'),
     h('h3', null, 'Privacy'),
-    h('p', null, 'Anyone can browse without an account. Submitting requires Google sign-in; your name appears on a solution only if you leave \u201cshow my name\u201d checked.')));
+    h('p', null, 'Anyone can browse without an account. To submit, you sign in with Google. Your name shows up on a solution only if you leave \u201cshow my name\u201d checked.')));
   if (DB.user) main.appendChild(h('section', { class: 'card prose' },
     h('h3', null, 'Your account'),
     h('p', null, 'Signed in as ' + (DB.user.email || DB.user.name) + '.'),
     h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'user id'),
       h('code', { class: 'mono scr' }, DB.user.uid), copyBtn(DB.user.uid)),
-    h('p', null, 'The site owner pastes this id into the Firestore security rules to become the admin (see SETUP.md).')));
+    h('p', null, 'If you run this site, paste this id into the Firestore security rules to become the admin (see SETUP.md).')));
   function nrow(a, b, c) {
     return h('div', { class: 'nrow' }, h('code', { class: 'mono' }, a), h('b', null, b), h('span', null, c));
   }
@@ -786,10 +786,10 @@ async function render() {
   catch (err) {
     const root = app(); root.innerHTML = '';
     root.appendChild(h('div', { class: 'card error', style: 'margin:48px auto;max-width:680px' },
-      'Something went wrong rendering this page: ' + err.message));
+      'Something went wrong loading this page. Try reloading.'));
   }
 }
-window.addEventListener('error', ev => { try { toast('Page error: ' + ev.message); } catch (e) {} });
+window.addEventListener('error', ev => { try { toast('Something went wrong. Try reloading the page.'); } catch (e) {} });
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', boot);
 window.OOApp = { verifySolution, pairOf, T, get DB() { return DB; }, ordinalOf };

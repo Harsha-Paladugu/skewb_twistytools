@@ -7,7 +7,7 @@
  * Usage:
  *   const bar = new SiteNavbar({
  *     active: 'oo',                                   // 'home' | 'oo' | 'solver' | 'trainer' | 'algs'
- *     sub: [{ label: 'Census', href: '#/', on: true }], // optional second row
+ *     sub: [{ label: 'Solutions', href: '#/', on: true }], // optional second row
  *     right: someElement,                             // optional right-side slot
  *   });
  *   bar.mount(document.body);     // prepend to an element, or:

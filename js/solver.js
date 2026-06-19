@@ -100,7 +100,7 @@ function reconstruction(it) {
   const cname = caseNameOf(pm);
   const lines = [];
   if (it.prefix) lines.push({ mv: it.prefix, cmt: '' });
-  lines.push({ mv: pm.vmoves || '—', cmt: '// ' + (VLABEL[pid] || METHOD_LABEL[pid]) });
+  lines.push({ mv: pm.vmoves || '-', cmt: '// ' + (VLABEL[pid] || METHOD_LABEL[pid]) });
   if (pm.amoves) lines.push({ mv: pm.amoves, cmt: '// algorithm' + (cname ? ' (' + cname + ')' : '') });
   const text = lines.map(l => (l.mv + (l.cmt ? '  ' + l.cmt : '')).trim()).join('\n')
     + '\nfinal solution (including cancels)\n' + it.display;
@@ -135,7 +135,7 @@ function parsedOffsets() {
   const out = [];
   for (const p of parts) {
     const o = C.parseOffset(p);
-    if (!o) { toast('Couldn\u2019t read offset \u201c' + p + '\u201d \u2014 plain moves, up to 4 per offset (e.g. L or R U).'); return null; }
+    if (!o) { toast('We couldn\u2019t read the offset \u201c' + p + '\u201d. Use plain moves, up to 4 per offset (e.g. L or R U).'); return null; }
     out.push(o);
   }
   if (!out.length) { toast('Pseudo methods need at least one offset.'); return null; }
@@ -161,7 +161,7 @@ async function runSearch(newLengths) {
     for (const L of lengths) UI.results[L] = res.byLength[L] || [];
     UI.truncated = res.truncated;
     for (const L of lengths) UI.lengths.add(L);
-  } catch (err) { toast('Search failed: ' + err.message); }
+  } catch (err) { toast('Something went wrong searching. Please try again.'); }
   UI.searching = false;
   UI.lastMs = Date.now() - t0;
   render();
@@ -189,7 +189,7 @@ function onSolve() {
   const txt = $('#scr-in').value.trim();
   if (!txt) return;
   const parsed = E.parseAlg(txt);
-  if (!parsed) { toast('Couldn\u2019t read that scramble \u2014 use standard notation (tip moves are ignored).'); return; }
+  if (!parsed) { toast('We couldn\u2019t read that scramble. Use standard notation (tip moves are ignored).'); return; }
   const st = E.applyParsed(parsed, E.solved(), syms, rotBy);
   UI.scramble = txt; UI.parsed = parsed; UI.state = st;
   UI.dopt = dist[E.idx(st)];
@@ -256,7 +256,7 @@ function solutionRow(it) {
     h('button', { class: 'breaktoggle', 'aria-expanded': it._open ? 'true' : 'false',
       title: 'show how the score is calculated',
       onclick: () => { it._open = !it._open; render(); } }, (it._open ? '▾' : '▸') + ' score'),
-    h('div', { class: 'solmeta scorechip', title: 'ergonomic cost — lower is nicer' }, String(it.score)));
+    h('div', { class: 'solmeta scorechip', title: 'comfort score. lower is nicer to turn' }, String(it.score)));
   if (!it._open) return row;
   let bd = null;
   try { bd = C.ergoScore(it.exec, it.prefix, UI.weights, true).breakdown; } catch (e) { return row; }
@@ -269,12 +269,12 @@ function renderInner() {
 
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'Method solver'),
-    h('p', { class: 'lede' }, 'Paste a scramble to get human-findable solutions \u2014 V into L4E, ML4E, L5E and more \u2014 ranked by how comfortable they are to turn. Every solution is machine-verified.')));
+    h('p', { class: 'lede' }, 'Paste a scramble and get solutions you can actually find at the table: V into L4E, ML4E, L5E and more, ranked by how comfortable they are to turn. Every solution is checked by the computer.')));
 
   /* scramble row */
   main.appendChild(h('div', { class: 'searchrow' },
     h('input', { id: 'scr-in', class: 'searchin mono', value: UI.scramble,
-      placeholder: "Scramble \u2014 e.g.  R U' B L' U R' B'  (tips ignored)",
+      placeholder: "Scramble, e.g.  R U' B L' U R' B'  (tips ignored)",
       onkeydown: ev => { if (ev.key === 'Enter') onSolve(); } }),
     h('button', { class: 'primary', onclick: onSolve }, 'Solve')));
 
@@ -292,14 +292,14 @@ function renderInner() {
     main.appendChild(h('div', { class: 'offsetrow' },
       h('span', { class: 'scrlabel' }, 'pseudo offsets'),
       h('input', { class: 'searchin mono sm', value: UI.offsetsText, 'aria-label': 'pseudo offsets',
-        placeholder: 'comma separated, up to 4 moves each \u2014 e.g.  L, R, R U',
+        placeholder: 'comma separated, up to 4 moves each, e.g.  L, R, R U',
         onchange: ev => { UI.offsetsText = ev.target.value; fullResearch(); } })));
   }
 
   /* options drawer */
   const drawer = h('section', { class: 'card optcard' },
     h('button', { class: 'opthead', onclick: () => { UI.optionsOpen = !UI.optionsOpen; render(); } },
-      (UI.optionsOpen ? '\u25be' : '\u25b8') + ' Options \u2014 filters & ergonomics'));
+      (UI.optionsOpen ? '\u25be' : '\u25b8') + ' Options: filters and comfort'));
   if (UI.optionsOpen) {
     const W = Object.assign({}, C.ERGO_DEFAULTS, UI.weights);
     const capIn = (id) => h('label', { class: 'capin' }, METHOD_LABEL[id],
@@ -318,16 +318,16 @@ function renderInner() {
             onchange: ev => { UI.maxCancel = +ev.target.value; fullResearch(); } }),
           h('span', { class: 'sliderval' }, String(UI.maxCancel)))),
       h('div', { class: 'optcol' },
-        h('h4', null, 'Ergonomics \u2014 re-ranks instantly'),
-        h('p', { class: 'opthint' }, 'Each move adds a small cost and the score is the total \u2014 lower means nicer to turn. Raise a slider if a situation bothers you more than the default.'),
-        slider('cold B', 'a B with no setup \u2014 nothing has positioned your index for it, like the B in L U \u2026 B', 'bCold', 1, 3, 0.1),
-        slider('set-up B', 'a B just after R or L\u2032 raises a thumb (the B in R B R\u2032), or within the first two moves of the solve', 'bSetup', 0.5, 2, 0.05),
+        h('h4', null, 'Comfort (re-ranks instantly)'),
+        h('p', { class: 'opthint' }, 'Each move adds a small cost, and the score is the total, so lower means nicer to turn. Raise a slider if something bugs you more than the default.'),
+        slider('cold B', 'a B with no setup, when nothing has put your index in place for it (like the B in L U \u2026 B)', 'bCold', 1, 3, 0.1),
+        slider('set-up B', 'a B right after R or L\u2032 raises a thumb (the B in R B R\u2032), or in the first two moves of the solve', 'bSetup', 0.5, 2, 0.05),
         slider('B setup fades after', 'how many moves a raised thumb stays ready for B before it counts as cold again', 'bWindow', 0, 4, 1),
-        slider('wide move', 'an Rw or Lw, relative to a normal turn (1.0 = no penalty)', 'wide', 0.5, 3, 0.05),
-        slider('hidden regrip', 'repeating a wrist direction, like the second L\u2032 in L\u2032 R L\u2032 \u2014 the hand has to reset before it can turn again', 'silentReset', 0, 1.5, 0.05),
-        slider('away-from-home tax', 'a small cost for every move a thumb spends off home grip \u2014 favors quick returns like R U R\u2032 and R\u2032 L R L\u2032', 'displacedTax', 0, 0.4, 0.02),
-        slider('hand alternation bonus', 'a discount each time the turning hand switches \u2014 bouncing between R and L flows', 'altBonus', 0, 0.5, 0.05),
-        slider('alternate starting grip', 'starting with a thumb on bottom or top instead of home \u2014 unlocks openers like R U R for a small delay', 'startDelay', 0, 1, 0.05),
+        slider('wide move', 'an Rw or Lw, compared with a normal turn (1.0 means no penalty)', 'wide', 0.5, 3, 0.05),
+        slider('hidden regrip', 'repeating a wrist direction, like the second L\u2032 in L\u2032 R L\u2032, where the hand has to reset before it can turn again', 'silentReset', 0, 1.5, 0.05),
+        slider('away-from-home tax', 'a small cost for every move a thumb spends off home grip, so quick returns like R U R\u2032 and R\u2032 L R L\u2032 are favored', 'displacedTax', 0, 0.4, 0.02),
+        slider('hand alternation bonus', 'a discount each time the turning hand switches, since bouncing between R and L flows', 'altBonus', 0, 0.5, 0.05),
+        slider('alternate starting grip', 'starting with a thumb on bottom or top instead of home, which unlocks openers like R U R for a small delay', 'startDelay', 0, 1, 0.05),
         slider('U with no free index', 'a U when both hands are busy and neither index is parked at the top', 'uBusy', 0, 1, 0.05),
         h('button', { class: 'ghost sm', onclick: () => { UI.weights = {}; rescoreAll(); } }, 'reset to defaults'))));
   }
@@ -350,7 +350,7 @@ function renderInner() {
         chips.appendChild(h('button', {
           class: 'depthsel' + (have ? ' on' : '') + (gated && !have ? ' gated' : ''),
           onclick: () => { if (!have) runSearch(new Set([L])); },
-          title: gated && !have ? 'deep search \u2014 click to run' : null,
+          title: gated && !have ? 'deep search. click to run' : null,
         }, h('b', null, String(L)), h('span', null, have ? (UI.results[L] || []).length + ' found' : (gated ? 'search\u2026' : 'search'))));
       }
       main.appendChild(chips);
@@ -358,7 +358,7 @@ function renderInner() {
   }
 
   if (UI.searching) main.appendChild(h('p', { class: 'empty' }, 'Searching\u2026'));
-  if (UI.truncated) main.appendChild(h('p', { class: 'warnline' }, 'This depth hit the search budget, so the list may be incomplete \u2014 tighten the caps or try a shorter length for an exhaustive search.'));
+  if (UI.truncated) main.appendChild(h('p', { class: 'warnline' }, 'This depth hit the search limit, so the list may be incomplete. Tighten the caps or try a shorter length to search everything.'));
 
   /* results */
   const lens = [...UI.lengths].sort((a, b) => a - b);
@@ -366,8 +366,8 @@ function renderInner() {
   let best = null, bestL = null;
   for (const L of lens) for (const it of (UI.results[L] || [])) if (!best || it.score < best.score) { best = it; bestL = L; }
   if (best) {
-    const note = bestL === UI.dopt ? 'optimal \u2014 ' + bestL + ' moves'
-      : bestL === UI.dopt + 1 ? 'optimal +1 \u2014 ' + bestL + ' moves'
+    const note = bestL === UI.dopt ? 'optimal, ' + bestL + ' moves'
+      : bestL === UI.dopt + 1 ? 'optimal +1, ' + bestL + ' moves'
       : bestL + ' moves';
     main.appendChild(h('section', { class: 'card solcard bestcard' },
       h('h3', null, 'Best solution', h('span', { class: 'counttag' }, note)),
@@ -376,27 +376,27 @@ function renderInner() {
   for (const L of lens) {
     const items = UI.results[L] || [];
     const sec = h('section', { class: 'card solcard' },
-      h('h3', null, L + ' moves' + (L === UI.dopt ? ' \u2014 optimal' : L === UI.dopt + 1 ? ' \u2014 optimal +1' : ''),
+      h('h3', null, L + ' moves' + (L === UI.dopt ? ', optimal' : L === UI.dopt + 1 ? ', optimal +1' : ''),
         h('span', { class: 'counttag' }, items.length + (items.length === 1 ? ' solution' : ' solutions'))));
-    if (!items.length) sec.appendChild(h('p', { class: 'empty' }, 'No method-findable solutions at this length.'));
+    if (!items.length) sec.appendChild(h('p', { class: 'empty' }, 'No method solutions at this length.'));
     items.slice(0, UI['showAll' + L] ? items.length : 10).forEach(it => sec.appendChild(solutionRow(it)));
     if (items.length > 10 && !UI['showAll' + L])
       sec.appendChild(h('button', { class: 'ghost sm', onclick: () => { UI['showAll' + L] = true; render(); } }, 'show all ' + items.length));
     main.appendChild(sec);
   }
-  if (UI.state && UI.dopt === 0) main.appendChild(h('p', { class: 'empty' }, 'Nothing to solve \u2014 that scramble leaves the puzzle solved.'));
-  if (!UI.state) main.appendChild(h('p', { class: 'empty hintline' }, 'The badge on each solution reads like \u201cL4E 3+6\u22122\u201d: a 3-move V, a 6-move finish, 2 moves canceled at the junction.'));
+  if (UI.state && UI.dopt === 0) main.appendChild(h('p', { class: 'empty' }, 'Nothing to solve. That scramble leaves the puzzle solved.'));
+  if (!UI.state) main.appendChild(h('p', { class: 'empty hintline' }, 'The badge on each solution reads like \u201cL4E 3+6\u22122\u201d: a 3-move V, a 6-move finish, and 2 moves that cancel where they meet.'));
 }
 function render() {
   try { renderInner(); }
   catch (err) {
     const root = $('#app'); root.innerHTML = '';
     const card = h('div', { class: 'card solcard', style: 'margin:48px auto;max-width:680px;border-color:rgba(232,71,61,.5)' },
-      'Something went wrong rendering this page: ' + err.message);
+      'Something went wrong loading this page. Try reloading.');
     root.appendChild(card);
   }
 }
-window.addEventListener('error', ev => { try { toast('Page error: ' + ev.message); } catch (e) {} });
+window.addEventListener('error', ev => { try { toast('Something went wrong. Try reloading the page.'); } catch (e) {} });
 window.OOSolver = { get UI() { return UI; }, runSearch, onSolve, get C() { return C; } };
 window.addEventListener('DOMContentLoaded', boot);
 })();
