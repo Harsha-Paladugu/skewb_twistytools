@@ -11,6 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import assert from 'node:assert';
+import { buildDist } from './lib/bfs-dist.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -141,26 +142,8 @@ test('realCanonKey: invariant under AUF (U-keying move + twist shift)', () => {
 });
 
 // ---- the optimal BFS solver ----
-function buildDist() {
-  const dist = new Int8Array(E.NSLOTS).fill(-1);
-  let frontier = new Uint32Array([E.idx(E.solved())]);
-  dist[frontier[0]] = 0;
-  while (frontier.length) {
-    const next = [];
-    for (let fi = 0; fi < frontier.length; fi++) {
-      const s = E.unidx(frontier[fi]);
-      for (let m = 0; m < 8; m++) {
-        const t = E.copy(s); E.applyMoveIdx(t, m);
-        const ix = E.idx(t);
-        if (dist[ix] === -1) { dist[ix] = dist[frontier[fi]] + 1; next.push(ix); }
-      }
-    }
-    frontier = Uint32Array.from(next);
-  }
-  return dist;
-}
+const dist = buildDist(E);   // shared tools/lib builder; built once for both tests
 test('optimalSolution: solves a scramble in exactly its optimal length', () => {
-  const dist = buildDist();
   const scr = applied("R U L B U' R'");
   const d = dist[E.idx(scr)];
   assert(d > 0, 'scramble should be unsolved');
@@ -170,7 +153,6 @@ test('optimalSolution: solves a scramble in exactly its optimal length', () => {
   assert(E.eq(back, E.solved()), 'applying the solution should solve the scramble');
 });
 test('optimalScramble: inverse of an optimal solution; re-solves to solved', () => {
-  const dist = buildDist();
   const st = applied('R U L B');
   const scr = E.optimalScramble(st, dist, false);
   const reached = E.applyParsed(E.parseAlg(scr), E.solved(), syms, rotBy);

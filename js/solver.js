@@ -48,10 +48,13 @@ const UI = {
   searching: false, truncated: false,
   optionsOpen: false,
 };
-const METHOD_LABEL = { l4e: 'L4E', ml4e: 'ML4E', l5e: 'L5E', tl4eb: 'TL4E-B', psl4e: 'Pseudo L4E', psml4e: 'Pseudo ML4E' };
+// labels + representative-decomposition priority come from the core's method
+// registry (single source); the chip display order is a page-layout concern.
+const METHOD_LABEL = Object.fromEntries(Object.keys(CORE.METHOD_DEFS).map(id => [id, CORE.METHOD_DEFS[id].name]));
+const METHOD_ORDER = ['l4e', 'ml4e', 'l5e', 'tl4eb', 'psl4e', 'psml4e'];
+const METHOD_PRIORITY = CORE.METHOD_PRIORITY;
 // first-step ("V") label for the reconstruction comment, per method
 const VLABEL = { l4e: 'V', ml4e: 'ML4E V', tl4eb: 'TL4E-B V', l5e: 'bar', psl4e: 'pseudo V', psml4e: 'pseudo ML4E V' };
-const METHOD_PRIORITY = ['l4e', 'ml4e', 'tl4eb', 'l5e', 'psl4e', 'psml4e'];
 // pick the decomposition to break down: shortest first step, then method order
 function primaryMethod(it) {
   const entries = Object.entries(it.methods);
@@ -240,7 +243,7 @@ function renderInner() {
 
   /* method toggles */
   const togRow = h('div', { class: 'methodrow' });
-  for (const id of Object.keys(METHOD_LABEL)) {
+  for (const id of METHOD_ORDER) {
     togRow.appendChild(h('button', { class: 'methodchip' + (UI.methods[id] ? ' on' : ''), onclick: () => {
       UI.methods[id] = !UI.methods[id];
       fullResearch();

@@ -12,6 +12,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { buildDist } from './lib/bfs-dist.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,30 +22,10 @@ const E = globalThis.window.OOEngine;
 require(path.join(ROOT, 'js', 'sheet.js'));
 const S = globalThis.window.OOSheet || null;
 require(path.join(ROOT, 'js', 'solver-core.js'));
-const { makeSolverCore } = globalThis.window.OOSolverCore;
+const { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY } = globalThis.window.OOSolverCore;
 
-/* ---- build the optimal-distance table (mirrors solver.js boot()) ---- */
-function buildDist() {
-  const d = new Int8Array(E.NSLOTS).fill(-1);
-  let frontier = new Uint32Array([E.idx(E.solved())]);
-  d[frontier[0]] = 0;
-  let dd = 0;
-  while (frontier.length) {
-    const next = [];
-    for (let fi = 0; fi < frontier.length; fi++) {
-      const s = E.unidx(frontier[fi]);
-      for (let m = 0; m < 8; m++) {
-        const t = E.copy(s); E.applyMoveIdx(t, m);
-        const ix = E.idx(t);
-        if (d[ix] === -1) { d[ix] = dd + 1; next.push(ix); }
-      }
-    }
-    dd++; frontier = Uint32Array.from(next);
-  }
-  return d;
-}
-
-const dist = buildDist();
+/* ---- the optimal-distance table (shared tools/lib builder) ---- */
+const dist = buildDist(E);
 const C = makeSolverCore(E, dist);
 const { syms, rotBy } = C;   // built once inside the core
 const rotations = C.buildRotations();
@@ -59,7 +40,8 @@ const DEFAULTS = {
   weights: {},
 };
 
-const METHOD_LABEL = { l4e: 'L4E', ml4e: 'ML4E', l5e: 'L5E', tl4eb: 'TL4E-B', psl4e: 'PsL4E', psml4e: 'PsML4E' };
+// labels from the core's method registry (single source with solver.js)
+const METHOD_LABEL = Object.fromEntries(Object.entries(METHOD_DEFS).map(([id, d]) => [id, d.name]));
 
 function caseNameOf(jstate) {
   if (!S || !jstate) return null;
@@ -107,9 +89,8 @@ function runOne(scramble, tuning, top) {
         .map(([id, m]) => `${METHOD_LABEL[id]} ${m.v}+${m.fin}${m.cancel ? '−' + m.cancel : ''}`)
         .join(', ');
       // representative decomposition (mirrors solver.js primaryMethod: shortest V, then priority)
-      const PRIO = ['l4e', 'ml4e', 'tl4eb', 'l5e', 'psl4e', 'psml4e'];
       const [pid, pm] = Object.entries(it.methods).sort(
-        (a, b) => a[1].v - b[1].v || PRIO.indexOf(a[0]) - PRIO.indexOf(b[0]))[0];
+        (a, b) => a[1].v - b[1].v || METHOD_PRIORITY.indexOf(a[0]) - METHOD_PRIORITY.indexOf(b[0]))[0];
       const cname = caseNameOf(pm.jstate);
       const recon = `${pm.vmoves || '—'}  |  ${pm.amoves || '—'}${cname ? '  (' + cname + ')' : ''}`;
       console.log(`    #${i + 1}  score ${String(it.score).padEnd(6)} ${it.display}`);

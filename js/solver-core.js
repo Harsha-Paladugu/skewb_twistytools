@@ -10,6 +10,20 @@
    A solution counts if executed sequence = reduce(P . A) where P reaches an enabled target
    within its cap (counted pre-cancellation), A solves the rest with length <= dist + slack
    ("human-findable" finishes), and <= maxCancel moves vanish at the junction. */
+/* ---------- method registry (module-level: no E/dist dependency) ---------- */
+// Names are the display labels used by the solver page and the tuning lab;
+// METHOD_PRIORITY is the tie-break order when picking a representative
+// decomposition (solver.js primaryMethod, solver-lab).
+const METHOD_DEFS = {
+  l4e:    { name: 'L4E',          cap: 7 },
+  ml4e:   { name: 'ML4E',         cap: 7 },
+  tl4eb:  { name: 'TL4E-B',       cap: 6 },
+  l5e:    { name: 'L5E',          cap: 4 },
+  psl4e:  { name: 'Pseudo L4E',   cap: 5 },
+  psml4e: { name: 'Pseudo ML4E',  cap: 5 },
+};
+const METHOD_PRIORITY = ['l4e', 'ml4e', 'tl4eb', 'l5e', 'psl4e', 'psml4e'];
+
 function makeSolverCore(E, dist) {
   const MOVES = E.MOVES; // ['U',"U'",'L',"L'",'R',"R'",'B',"B'"]
   const sigOf = s => (E.idx(s) - (E.idx(s) % 3)) / 3; // no-u signature
@@ -89,15 +103,6 @@ function makeSolverCore(E, dist) {
     return out;
   }
 
-  /* ---------- method registry ---------- */
-  const METHOD_DEFS = {
-    l4e:    { name: 'L4E',          cap: 7 },
-    ml4e:   { name: 'ML4E',         cap: 7 },
-    tl4eb:  { name: 'TL4E-B',       cap: 6 },
-    l5e:    { name: 'L5E',          cap: 4 },
-    psl4e:  { name: 'Pseudo L4E',   cap: 5 },
-    psml4e: { name: 'Pseudo ML4E',  cap: 5 },
-  };
   function buildTargets(cfg) {
     // cfg: { methods:{id:bool}, caps:{id:int}, offsets:[token[]] }
     const sets = {}; // id -> Set of sigs
@@ -405,5 +410,5 @@ function makeSolverCore(E, dist) {
 
   return { reduceSeq, pool, compose, invPremoveState, parseOffset, buildTargets, buildRotations, ergoScore, search, METHOD_DEFS, ERGO_DEFAULTS, sigOf, syms, rotBy };
 }
-if (typeof module !== 'undefined') module.exports = { makeSolverCore };
+if (typeof module !== 'undefined') module.exports = { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY };
 window.OOSolverCore=module.exports;})();
