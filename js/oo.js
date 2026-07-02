@@ -73,6 +73,11 @@ function variantsOf(classId) { // unique rotation variants of a class, each with
 // Returns {ok, side:'a'|'b', moves, error?} — accepts a solution for any rotation
 // variant of either side of the pair.
 function verifySolution(text, pair) {
+  // The solved position (depth 0) takes no solutions: any accepted "solution"
+  // (e.g. R R') would mark it done a second time — pageHome already counts
+  // depth-0 as solved by definition. Also disables Approve for any legacy
+  // pending depth-0 submission in the moderation queue.
+  if (pair.a.depth === 0) return { ok: false, error: 'This is the solved position — there’s nothing to solve.' };
   const parsed = E.parseAlg(text);
   if (!parsed) return { ok: false, error: 'We couldn\u2019t read that. Use U L R B (with w, \u2032 or 2) and rotations [u] [l] [r] [b] or y. Tips are ignored.' };
   const moves = E.countMoves(parsed);
@@ -244,8 +249,13 @@ function liveDB() {
         notify(); return;
       }
       // Enforce the per-scramble cap before approving. Rules can't count sibling
-      // docs, so read the pending doc's pairId and query how many approved
-      // solutions the pair already has; throw CAP so pageMod can explain the block.
+      // docs and Firestore transactions can't run queries, so this query runs
+      // BEFORE the transaction — it is best-effort and racy: two moderators
+      // approving different pending solutions for the same pair concurrently can
+      // both pass it and exceed MAX_SOLUTIONS. Accepted trade-off: worst case is
+      // one extra approved solution (visible in the UI, deletable by an admin);
+      // the bitmap/counter stay consistent because both transactions serialize
+      // on the meta docs. Throw CAP so pageMod can explain the block.
       const preSnap = await F.getDoc(F.doc(fs, 'solutions', id));
       if (!preSnap.exists() || preSnap.data().status !== 'pending') { notify(); return; }
       const approvedQ = F.query(F.collection(fs, 'solutions'),
@@ -330,6 +340,7 @@ async function renderInner() {
     else if (route.startsWith('#/about')) pageAbout(main);
     else await pageHome(main);
   } catch (err) {
+    console.error(err);
     main.appendChild(h('div', { class: 'card error' }, 'Something went wrong loading this page. Try reloading.'));
   }
 }
@@ -550,7 +561,10 @@ async function pageClass(main, anyId) {
 
   /* submit */
   const sub = h('section', { class: 'card subcard' }, h('h3', null, 'Submit a solution'));
-  if (approved.length >= MAX_SOLUTIONS) {
+  if (pair.a.depth === 0) {
+    // the solved position — counted as done by definition, nothing to submit
+    sub.appendChild(h('p', { class: 'empty' }, 'This is the solved position — there’s nothing to solve, so it doesn’t take solutions.'));
+  } else if (approved.length >= MAX_SOLUTIONS) {
     // Every scramble keeps at most MAX_SOLUTIONS solutions — this one is full.
     sub.appendChild(h('p', { class: 'empty' }, 'This scramble already has ' + MAX_SOLUTIONS + ' solutions — the maximum. Thanks for looking!'));
   } else if (!DB.user) {
@@ -768,6 +782,7 @@ async function boot() {
 async function render() {
   try { await renderInner(); }
   catch (err) {
+    console.error(err);
     const root = app(); root.innerHTML = '';
     root.appendChild(h('div', { class: 'card error', style: 'margin:48px auto;max-width:680px' },
       'Something went wrong loading this page. Try reloading.'));
