@@ -3,7 +3,7 @@
 (function () {
 const E = window.OOEngine, R = window.OORender;
 const CFG = window.OO_CONFIG || {};
-const { h, $, toast, tick } = window.OODom;
+const { h, $, toast, tick, copyBtn, installErrorToast } = window.OODom;
 const fmt = n => n.toLocaleString('en-US');
 // Each scramble (a position + its mirror, keyed by pairId) keeps at most this many
 // approved solutions. Enforced app-side — in the submit form and at approval — since
@@ -401,13 +401,6 @@ function requestModBlock() {
     ? h('button', { class: 'primary', onclick: () => window.open(url, '_blank', 'noopener') }, 'Request moderator access')
     : h('p', { class: 'empty' }, 'Moderator applications aren’t open yet — check back soon.');
 }
-function copyBtn(text) {
-  return h('button', { class: 'copy', title: 'Copy', 'aria-label': 'Copy', onclick: ev => {
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
-      .then(() => toast('Copied'))
-      .catch(() => { const ta = h('textarea', null, text); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copied'); });
-  } }, '\u2398');
-}
 function sidePanel(side, label, doneSet, exactView) {
   const shownState = exactView && exactView.state ? exactView.state : side.state;
   const isExact = E.idx(shownState) !== side.id;
@@ -788,7 +781,7 @@ async function render() {
       'Something went wrong loading this page. Try reloading.'));
   }
 }
-window.addEventListener('error', ev => { try { toast('Something went wrong. Try reloading the page.'); } catch (e) {} });
+installErrorToast();
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', boot);
 window.OOApp = { verifySolution, pairOf, T, get DB() { return DB; }, ordinalOf };

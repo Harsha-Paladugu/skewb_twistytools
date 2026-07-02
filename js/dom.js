@@ -1,4 +1,4 @@
-/* Pyraminx.net — shared DOM micro-kit (window.OODom = { h, $, toast, tick }).
+/* Pyraminx.net — shared DOM micro-kit (window.OODom = { h, $, toast, tick, copyBtn, installErrorToast }).
    One source for the tiny hyperscript helpers used by oo.js, algs.js, solver.js.
    Plain browser global; no bundler. The `html` attr is a trusted-markup-only
    escape hatch (innerHTML) — never pass user-supplied strings to it. */
@@ -27,5 +27,17 @@
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 350); }, duration);
   }
   const tick = () => new Promise(r => setTimeout(r, 0));
-  window.OODom = { h, $, toast, tick };
+  // clipboard copy button with an execCommand fallback for older browsers
+  function copyBtn(text) {
+    return h('button', { class: 'copy', title: 'Copy', 'aria-label': 'Copy', onclick: () => {
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+        .then(() => toast('Copied'))
+        .catch(() => { const ta = h('textarea', null, text); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copied'); });
+    } }, '⎘');
+  }
+  // last-resort toast for uncaught errors (does not suppress console logging)
+  function installErrorToast() {
+    window.addEventListener('error', () => { try { toast('Something went wrong. Try reloading the page.'); } catch (e) {} });
+  }
+  window.OODom = { h, $, toast, tick, copyBtn, installErrorToast };
 })();

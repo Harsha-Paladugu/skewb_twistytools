@@ -2,7 +2,7 @@
 /* Pyraminx OO — Solver tab app. Expects OOEngine, OORender, OOSolverCore. */
 (function () {
 const E = window.OOEngine, R = window.OORender, CORE = window.OOSolverCore;
-const { h, $, toast, tick } = window.OODom;
+const { h, $, toast, tick, copyBtn, installErrorToast } = window.OODom;
 
 /* ---- tables (shared dist cache via js/tables.js \u2014 same IndexedDB the OO page uses) ---- */
 let dist = null, C = null, rotations = null, syms = null, rotBy = null;
@@ -169,13 +169,6 @@ function onSolve() {
 }
 
 /* ---- views ---- */
-function copyBtn(text) {
-  return h('button', { class: 'copy', title: 'Copy', onclick: () => {
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
-      .then(() => toast('Copied'))
-      .catch(() => { const ta = h('textarea', null, text); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copied'); });
-  } }, '\u2398');
-}
 function slider(label, hint, key, min, max, step) {
   const W = Object.assign({}, C.ERGO_DEFAULTS, UI.weights);
   const val = h('span', { class: 'sliderval' }, String(W[key]));
@@ -364,7 +357,7 @@ function render() {
     root.appendChild(card);
   }
 }
-window.addEventListener('error', ev => { try { toast('Something went wrong. Try reloading the page.'); } catch (e) {} });
+installErrorToast();
 window.OOSolver = { get UI() { return UI; }, runSearch, onSolve, get C() { return C; } };
 window.addEventListener('DOMContentLoaded', boot);
 })();
