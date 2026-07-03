@@ -1,5 +1,5 @@
-/* Pyraminx.net — OO solutions app. Expects OOEngine, OORender, SiteNavbar, OOAccount (auth) and OO_CONFIG (config.js). */
-/* Pyraminx OO — app layer. Expects window.OOEngine (engine) + window.OORender (net renderer). */
+/* Skewbiks.com — OO solutions app. Expects OOEngine, OORender, SiteNavbar, OOAccount (auth) and OO_CONFIG (config.js). */
+/* Skewb OO — app layer. Expects window.OOEngine (engine) + window.OORender (net renderer). */
 (function () {
 const E = window.OOEngine, R = window.OORender;
 const CFG = window.OO_CONFIG || {};
@@ -79,7 +79,7 @@ function verifySolution(text, pair) {
   // pending depth-0 submission in the moderation queue.
   if (pair.a.depth === 0) return { ok: false, error: 'This is the solved position — there’s nothing to solve.' };
   const parsed = E.parseAlg(text);
-  if (!parsed) return { ok: false, error: 'We couldn\u2019t read that. Use U L R B (with w, \u2032 or 2) and rotations [u] [l] [r] [b] or y. Tips are ignored.' };
+  if (!parsed) return { ok: false, error: 'We couldn\u2019t read that. Use R U L B (with \u2032 or 2) and rotations x y z.' };
   const moves = E.countMoves(parsed);
   if (moves === 0) return { ok: false, error: 'Add some moves first.' };
   if (moves > 15) return { ok: false, error: 'That\u2019s ' + moves + ' moves. Solutions have to be 15 or fewer.' };
@@ -117,7 +117,7 @@ let DB = null;
 let lastSearch = null; // the scramble the visitor just searched, so the position page can show it verbatim
 
 function demoDB() {
-  const KEY = 'pyraminx-oo-demo';
+  const KEY = 'skewbiks-oo-demo';
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { solutions: [], mods: [] }; } catch { return { solutions: [], mods: [] }; } };
   const save = d => { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch {} };
   const subs = new Set();
@@ -352,9 +352,9 @@ async function pageHome(main) {
   const stats = { total: raw.total, done: raw.done + (T.depthIdx[0] ? T.depthIdx[0].length : 0) };
   const pct = stats.total ? stats.done / stats.total : 0;
   main.appendChild(h('section', { class: 'homeintro' },
-    h('h1', null, 'The best human solution to every Pyraminx position.'),
+    h('h1', null, 'The best human solution to every Skewb position.'),
     h('p', { class: 'lede' },
-      'Once you fold rotations together, the Pyraminx has ' + fmt(T.reps.length) + ' positions, and a position and its mirror count as one. ',
+      'Once you fold rotations together, the Skewb has ' + fmt(T.reps.length) + ' positions, and a position and its mirror count as one. ',
       'Paste a scramble to look yours up, or browse by depth and claim one nobody has solved yet.')));
   main.appendChild(h('section', { class: 'progressblock' },
     h('div', { class: 'barwrap', role: 'progressbar', 'aria-valuenow': (pct*100).toFixed(2), 'aria-valuemin': '0', 'aria-valuemax': '100' },
@@ -363,7 +363,7 @@ async function pageHome(main) {
       h('b', null, fmt(stats.done)), ' solved \u00b7 ', h('b', null, fmt(stats.total - stats.done)), ' to go \u00b7 ',
       h('b', { class: 'pct' }, (pct * 100).toFixed(pct > 0 && pct < 0.0001 ? 4 : 2) + '%'), ' complete')));
   const searchBox = h('div', { class: 'searchrow' },
-    h('input', { class: 'searchin mono', placeholder: "Paste a scramble (tips like l r b u are ignored)",
+    h('input', { class: 'searchin mono', placeholder: "Paste a scramble, e.g.  L R L U' B R' U' R' L R B",
       'aria-label': 'scramble search',
       onkeydown: ev => { if (ev.key === 'Enter') doSearch(ev.target); } }),
     h('button', { class: 'primary', onclick: ev => doSearch(ev.target.parentElement.querySelector('input')) }, 'Find this scramble'));
@@ -371,7 +371,7 @@ async function pageHome(main) {
     const txt = input.value.trim();
     if (!txt) return;
     const parsed = E.parseAlg(txt);
-    if (!parsed) { toast('We couldn\u2019t read that scramble. Use U L R B with \u2032 or 2 (tips are ignored).'); return; }
+    if (!parsed) { toast('We couldn\u2019t read that scramble. Use R U L B with \u2032 or 2 (rotations x y z are fine).'); return; }
     const st = E.applyParsed(parsed, E.solved(), T.syms, T.rotByCorner);
     lastSearch = { ix: E.idx(st), text: txt.replace(/\s+/g, ' ') };
     const target = '#/c/' + lastSearch.ix;
@@ -570,7 +570,7 @@ async function pageClass(main, anyId) {
     sub.appendChild(h('p', { style: 'color:var(--mut);font-size:13.5px;margin:.1em 0 .9em' },
       approved.length + ' of ' + MAX_SOLUTIONS + ' solutions recorded for this scramble.'));
     const ta = h('textarea', { class: 'mono solin', rows: '2',
-      placeholder: "e.g.  [r] L U' Rw B2 U L'   (rotations free \u00b7 wides & doubles 1 move \u00b7 tips ignored \u00b7 max 15)" });
+      placeholder: "e.g.  y L U' B2 U L'   (rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)" });
     const status = h('div', { class: 'verifyline' }, 'Type a solution. We check it as you go, against every rotation of both mirrors.');
     const nameRow = h('label', { class: 'namerow' },
       h('input', { type: 'checkbox', checked: '' }), ' show my name (', DB.user.name || DB.user.email, ') on this solution');
@@ -608,7 +608,7 @@ async function pageClass(main, anyId) {
 /* ---------------- browse ---------------- */
 async function pageBrowse(main, route) {
   const m = route.match(/^#\/browse\/?(\d+)?(?:\/p(\d+))?/);
-  const depth = m && m[1] !== undefined ? +m[1] : 5;
+  const depth = m && m[1] !== undefined ? +m[1] : 8;
   const page = m && m[2] ? +m[2] : 0;
   const bm = await DB.doneMap();
   const isDone = o => isTrivial(o) || !!(bm[o >> 3] & (1 << (o & 7)));
@@ -725,15 +725,13 @@ async function pageMod(main) {
 function pageAbout(main) {
   main.appendChild(h('section', { class: 'card prose' },
     h('h2', null, 'How OO solutions work'),
-    h('p', null, 'Ignoring the tips, the Pyraminx has exactly 933,120 positions, and every one can be solved in 11 moves or fewer. That part is proven by computer. What a computer can\u2019t tell you is which short solution feels best in your hands. This page collects the community\u2019s pick, one position at a time.'),
+    h('p', null, 'The Skewb has exactly 3,149,280 positions, and every one can be solved in 11 moves or fewer. That part is proven by computer. What a computer can\u2019t tell you is which short solution feels best in your hands. This page collects the community\u2019s pick, one position at a time.'),
     h('h3', null, 'Positions, rotations and mirrors'),
-    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, so those 933,120 states come down to ' + fmt(T.reps.length) + ' positions. Each one covers up to 12 rotations, which you can flip through on any position page. A position and its mirror are different solves with mirrored algorithms, so they\u2019re shown side by side. Submit either one and we generate the mirrored version for you. One approved solution marks both as done.'),
+    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, so those 3,149,280 states come down to ' + fmt(T.reps.length) + ' positions. Each one covers up to 12 rotations, which you can flip through on any position page. A position and its mirror are different solves with mirrored algorithms, so they\u2019re shown side by side. Submit either one and we generate the mirrored version for you. One approved solution marks both as done.'),
     h('h3', null, 'Notation'),
     h('div', { class: 'nottable' },
-      nrow('U L R B', 'face moves \u00b7 1 move each', "U' and U2 both mean the inverse turn, still 1 move"),
-      nrow('Uw Lw Rw Bw', 'wide moves \u00b7 1 move each', "Rw = L [l\u2032], Lw = R [r\u2032], Uw = B [b\u2032], Bw = U [u\u2032]"),
-      nrow('[u] [l] [r] [b], y', 'rotations \u00b7 0 moves', 'rotate the whole puzzle; y is the same as [u]'),
-      nrow('u l r b (lowercase)', 'tips \u00b7 ignored', 'scrambles can include tip moves; we just strip them out')),
+      nrow('R U L B', 'corner moves \u00b7 1 move each', "R' and R2 both mean the inverse twist, still 1 move. WCA notation: R, U and L turn the bottom-right, top-back and bottom-left corners; B turns the back corner."),
+      nrow('x y z', 'rotations \u00b7 0 moves', 'rotate the whole puzzle 90\u00b0, like on a cube; combine freely')),
     h('h3', null, 'Submitting and review'),
     h('p', null, 'Submitting solutions is limited to moderators. Solutions can be up to 15 moves and are checked automatically: they have to really solve the scramble, from any rotation, on either mirror. A moderator then reviews each one before it goes live, and we check it again at that point. Each scramble keeps at most ' + MAX_SOLUTIONS + ' solutions, so once two are approved that position is settled.'),
     h('h3', null, 'Becoming a moderator'),
@@ -757,7 +755,7 @@ async function boot() {
   const bootEl = $('#boot-status');
   const label = $('#boot-label'), barEl = $('#boot-bar'), trackEl = $('#boot-track');
   const report = (stage, n, total) => {
-    const names = { cache: 'Loading cached tables', bfs: 'Mapping all 933,120 positions', classes: 'Condensing symmetries' };
+    const names = { cache: 'Loading cached tables', bfs: 'Mapping all 3,149,280 positions', classes: 'Condensing symmetries' };
     const pct = Math.round(100 * n / total);
     label.textContent = (names[stage] || stage) + '\u2026';
     barEl.style.width = pct + '%';

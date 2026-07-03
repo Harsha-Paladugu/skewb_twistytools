@@ -1,4 +1,4 @@
-/* Pyraminx.net — shared BFS table cache (window.OOTables).
+/* Skewbiks.com — shared BFS table cache (window.OOTables).
  *
  * The OO census (js/oo.js) and the method solver (js/solver.js) both need the
  * BFS distance table over the full no-tips state space; the census also needs the
@@ -19,9 +19,10 @@
  */
 (function () {
   const module = { exports: {} };
-  const DB_NAME = 'pyraminx-oo', STORE = 't';
+  const DB_NAME = 'skewbiks-oo', STORE = 't';
   const KEY_DIST = 'oo-dist-v1';        // { dist: ArrayBuffer }
   const KEY_CLASSES = 'oo-classes-v1';  // { reps: ArrayBuffer, depths: ArrayBuffer }
+  const REACHABLE = 3149280;            // progress denominator (reachable states)
 
   function openDB() {
     return new Promise((res, rej) => {
@@ -68,16 +69,16 @@
       const next = [];
       for (let fi = 0; fi < frontier.length; fi++) {
         const s = E.unidx(frontier[fi]);
-        for (let m = 0; m < 8; m++) {
+        for (let m = 0; m < E.MOVES.length; m++) {
           const t2 = E.copy(s); E.applyMoveIdx(t2, m);
           const ix = E.idx(t2);
           if (dist[ix] === -1) { dist[ix] = d + 1; next.push(ix); }
         }
-        if ((fi & 8191) === 8191) { if (report) report('bfs', seen + next.length, 933120); if (tick) await tick(); }
+        if ((fi & 8191) === 8191) { if (report) report('bfs', seen + next.length, REACHABLE); if (tick) await tick(); }
       }
       d++; seen += next.length;
       frontier = Uint32Array.from(next);
-      if (report) report('bfs', seen, 933120);
+      if (report) report('bfs', seen, REACHABLE);
       if (tick) await tick();
     }
     idbPut(KEY_DIST, { dist: dist.buffer });
