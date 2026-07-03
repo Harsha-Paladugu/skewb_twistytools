@@ -5,9 +5,30 @@ const E = window.OOEngine, R = window.OORender;
 const CFG = window.OO_CONFIG || {};
 const { h, $, toast, tick, copyBtn, installErrorToast } = window.OODom;
 const fmt = n => n.toLocaleString('en-US');
-// Each scramble (a position + its mirror, keyed by pairId) keeps at most this many
-// approved solutions. Enforced app-side — in the submit form and at approval — since
-// Firestore rules can't count sibling docs. Approving/creating past it is blocked.
+
+/* ---------------- notation (WCA default, NS switch) ---------------- */
+// One per-browser preference. WCA letters R U L B are the official scramble
+// notation; NS ("Rubik'skewb", used by the Sarah/NS alg sheets) names all
+// eight corners: top F R B L, bottom f r b l. Engine-generated strings are
+// always WCA and get display-converted; stored solutions carry the notation
+// they were typed in (doc field `notation`, default 'wca').
+const NOTA_KEY = 'skewbiks-notation';
+let NOTA = 'wca';
+try { if (localStorage.getItem(NOTA_KEY) === 'ns') NOTA = 'ns'; } catch {}
+function setNota(v) {
+  NOTA = v === 'ns' ? 'ns' : 'wca';
+  try { localStorage.setItem(NOTA_KEY, NOTA); } catch {}
+  render();
+}
+const dispAlg = s => (s && NOTA === 'ns') ? E.wcaToNS(s) : s;                 // engine WCA string -> active notation
+const notaOf = sol => sol.notation === 'ns' ? 'ns' : 'wca';
+const dispSol = sol => E.convertAlg(sol.solution, notaOf(sol), NOTA) || sol.solution;
+const dispSolMirror = sol => E.convertAlg(E.mirrorAlg(sol.solution), notaOf(sol), NOTA) || E.mirrorAlg(sol.solution);
+
+// Each scramble (a position + its mirror — one census class, keyed by pairId)
+// keeps at most this many approved solutions. Enforced app-side — in the submit
+// form and at approval — since Firestore rules can't count sibling docs.
+// Approving/creating past it is blocked.
 const MAX_SOLUTIONS = 2;
 const moderatorFormUrl = () => String(CFG.moderatorFormUrl || '').trim();
 
@@ -26,7 +47,12 @@ async function buildTables(report) {
   T.syms = E.buildSyms();
   // Build the canonicalizers once (each closes over T.syms); canonOf/mirrorOf
   // below delegate to these, so the closures aren't rebuilt per call in hot loops.
-  T.canonOf = E.makeCanon(T.syms);
+  // canonOf folds ALL 24 symmetries (12 rotations + 12 mirrors) — the census
+  // class key, matching tables.js; rotCanonOf folds rotations only (it tells a
+  // class's two mirror sides apart); mirrorOf gives the rotation-canonical id
+  // of a state's mirror image.
+  T.canonOf = E.makeFullCanon(T.syms);
+  T.rotCanonOf = E.makeCanon(T.syms);
   T.mirrorOf = E.makeMirrorCanon(T.syms);
   T.rotByCorner = E.makeFrames(T.syms);
   // dist is shared with the solver (KEY_DIST); the canonical-class tables are
@@ -46,9 +72,8 @@ function ordinalOf(classId) { // binary search in reps
     if (T.reps[mid] < classId) lo = mid + 1; else hi = mid - 1; }
   return -1;
 }
-const canonOf = s => T.canonOf(s);
-const mirrorOf = s => T.mirrorOf(s);
-const pairIdOf = cid => Math.min(cid, mirrorOf(E.unidx(cid)));
+const canonOf = s => T.canonOf(s);      // 24-sym class id (a position and its mirror share it)
+const mirrorOf = s => T.mirrorOf(s);    // rotation-canonical id of the mirror image
 // decode a base64 done-bitmap into a fresh Uint8Array sized to the class count
 // (a missing/empty string yields the all-zero bitmap).
 function decodeBitmap(b64) {
@@ -72,14 +97,17 @@ function variantsOf(classId) { // unique rotation variants of a class, each with
 /* ---------------- solution verification ---------------- */
 // Returns {ok, side:'a'|'b', moves, error?} — accepts a solution for any rotation
 // variant of either side of the pair.
-function verifySolution(text, pair) {
+function verifySolution(text, pair, notation) {
+  const nota = notation || NOTA;
   // The solved position (depth 0) takes no solutions: any accepted "solution"
   // (e.g. R R') would mark it done a second time — pageHome already counts
   // depth-0 as solved by definition. Also disables Approve for any legacy
   // pending depth-0 submission in the moderation queue.
   if (pair.a.depth === 0) return { ok: false, error: 'This is the solved position — there’s nothing to solve.' };
-  const parsed = E.parseAlg(text);
-  if (!parsed) return { ok: false, error: 'We couldn\u2019t read that. Use R U L B (with \u2032 or 2) and rotations x y z.' };
+  const parsed = E.parseAlg(text, nota);
+  if (!parsed) return { ok: false, error: nota === 'ns'
+    ? 'We couldn\u2019t read that as NS notation (corners F R B L f r b l, rotations x y z).'
+    : 'We couldn\u2019t read that. Use R U L B (with \u2032 or 2) and rotations x y z.' };
   const moves = E.countMoves(parsed);
   if (moves === 0) return { ok: false, error: 'Add some moves first.' };
   if (moves > 15) return { ok: false, error: 'That\u2019s ' + moves + ' moves. Solutions have to be 15 or fewer.' };
@@ -92,21 +120,25 @@ function verifySolution(text, pair) {
   }
   return { ok: false, moves, error: 'That doesn\u2019t solve this scramble. We checked it from every rotation of both mirrors.' };
 }
-function pairOf(classId) {
-  const a = { id: classId, state: E.unidx(classId) };
-  const mid = mirrorOf(a.state);
-  const pairId = Math.min(classId, mid);
+// One census class covers a position AND its LR mirror (24-sym fold). The page
+// still shows the two mirror "sides" separately: `a` is the class rep (which is
+// also the smaller rotation-canonical id), `b` its mirror image — null for the
+// 108 self-mirror classes. Both sides share the class ordinal and done-bit.
+// Accepts either side's id (or the pairId) and normalizes.
+function pairOf(anyClassId) {
+  const pairId = Math.min(anyClassId, mirrorOf(E.unidx(anyClassId)));
   const lowState = E.unidx(pairId);
-  const hiId = Math.max(classId, mid);
+  const hiId = mirrorOf(lowState);
+  const ord = ordinalOf(pairId);
   const pair = {
     pairId,
-    a: { id: pairId, state: lowState, ord: ordinalOf(pairId), depth: T.dist[pairId],
+    a: { id: pairId, state: lowState, ord, depth: T.dist[pairId],
          scramble: E.optimalScramble(lowState, T.dist, false), variants: variantsOf(pairId) },
     b: null, self: pairId === hiId,
   };
   if (!pair.self) {
     const hiState = E.unidx(hiId);
-    pair.b = { id: hiId, state: hiState, ord: ordinalOf(hiId), depth: T.dist[hiId],
+    pair.b = { id: hiId, state: hiState, ord, depth: T.dist[hiId],
                scramble: E.optimalScramble(hiState, T.dist, false), variants: variantsOf(hiId) };
   }
   return pair;
@@ -134,13 +166,14 @@ function demoDB() {
     signOut() { return A.signOut(); },
     async stats() {
       const d = load(); const done = new Set();
-      for (const s of d.solutions) if (s.status === 'approved') { done.add(s.classId); if (s.partnerId !== s.classId) done.add(s.partnerId); }
+      for (const s of d.solutions) if (s.status === 'approved') done.add(s.pairId);
       return { done: done.size, total: T.reps.length };
     },
     async doneMap() {
       const d = load(); const bm = new Uint8Array(Math.ceil(T.reps.length / 8));
-      for (const s of d.solutions) if (s.status === 'approved')
-        for (const cid of [s.classId, s.partnerId]) { const o = ordinalOf(cid); if (o >= 0) bm[o >> 3] |= 1 << (o & 7); }
+      for (const s of d.solutions) if (s.status === 'approved') {
+        const o = ordinalOf(s.pairId); if (o >= 0) bm[o >> 3] |= 1 << (o & 7);
+      }
       return bm;
     },
     async pairSolutions(pairId) {
@@ -273,7 +306,9 @@ function liveDB() {
         let added = 0;
         // Re-derive the partner from classId (matching pairOf's mirrorOf) rather
         // than trusting the submitter-supplied partnerId, so a forged value can't
-        // flip an unrelated position's done-bit.
+        // flip an unrelated position's done-bit. Classes fold mirrors, so only
+        // the class rep (the smaller id) has an ordinal — the loop sets that
+        // one bit; the other side's ordinalOf comes back -1 and is skipped.
         const partnerId = mirrorOf(E.unidx(data.classId));
         for (const cid of [data.classId, partnerId]) {
           const o = ordinalOf(cid);
@@ -315,7 +350,13 @@ function nav() {
     DB.isMod ? { label: 'Moderation', href: '#/mod', on: route.startsWith('#/mod') } : null,
     { label: 'How it works', href: '#/about', on: route.startsWith('#/about') },
   ].filter(Boolean);
+  const notaSwitch = h('div', { class: 'notaswitch', role: 'group', 'aria-label': 'move notation' },
+    h('button', { class: 'notabtn' + (NOTA === 'wca' ? ' on' : ''), 'aria-pressed': NOTA === 'wca' ? 'true' : 'false',
+      title: 'WCA notation — R U L B turn the fixed corners (official scrambles)', onclick: () => setNota('wca') }, 'WCA'),
+    h('button', { class: 'notabtn' + (NOTA === 'ns' ? ' on' : ''), 'aria-pressed': NOTA === 'ns' ? 'true' : 'false',
+      title: 'NS notation — top corners F R B L, bottom corners f r b l (Sarah / NS alg sheets)', onclick: () => setNota('ns') }, 'NS'));
   const right = h('div', { class: 'authbox' },
+      notaSwitch,
       DB.mode === 'demo' ? h('span', { class: 'demobadge', title: 'No Firebase config yet. Your data stays in this browser.' }, 'demo mode') : null,
       u ? h('span', { class: 'whoami' }, u.name || u.email) : null,
       u ? h('button', { class: 'ghost', onclick: () => DB.signOut() }, 'Sign out')
@@ -354,7 +395,7 @@ async function pageHome(main) {
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'The best human solution to every Skewb position.'),
     h('p', { class: 'lede' },
-      'Once you fold rotations together, the Skewb has ' + fmt(T.reps.length) + ' positions, and a position and its mirror count as one. ',
+      'Fold rotations and mirrors together and the Skewb’s 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions — a position and its mirror count as one. ',
       'Paste a scramble to look yours up, or browse by depth and claim one nobody has solved yet.')));
   main.appendChild(h('section', { class: 'progressblock' },
     h('div', { class: 'barwrap', role: 'progressbar', 'aria-valuenow': (pct*100).toFixed(2), 'aria-valuemin': '0', 'aria-valuemax': '100' },
@@ -363,15 +404,17 @@ async function pageHome(main) {
       h('b', null, fmt(stats.done)), ' solved \u00b7 ', h('b', null, fmt(stats.total - stats.done)), ' to go \u00b7 ',
       h('b', { class: 'pct' }, (pct * 100).toFixed(pct > 0 && pct < 0.0001 ? 4 : 2) + '%'), ' complete')));
   const searchBox = h('div', { class: 'searchrow' },
-    h('input', { class: 'searchin mono', placeholder: "Paste a scramble, e.g.  L R L U' B R' U' R' L R B",
+    h('input', { class: 'searchin mono', placeholder: 'Paste a scramble, e.g.  ' + dispAlg("L R L U' B R' U' R' L R B"),
       'aria-label': 'scramble search',
       onkeydown: ev => { if (ev.key === 'Enter') doSearch(ev.target); } }),
     h('button', { class: 'primary', onclick: ev => doSearch(ev.target.parentElement.querySelector('input')) }, 'Find this scramble'));
   function doSearch(input) {
     const txt = input.value.trim();
     if (!txt) return;
-    const parsed = E.parseAlg(txt);
-    if (!parsed) { toast('We couldn\u2019t read that scramble. Use R U L B with \u2032 or 2 (rotations x y z are fine).'); return; }
+    const parsed = E.parseAlg(txt, NOTA);
+    if (!parsed) { toast(NOTA === 'ns'
+      ? 'We couldn\u2019t read that as NS notation (corners F R B L f r b l, rotations x y z). If it uses R U L B, switch to WCA.'
+      : 'We couldn\u2019t read that scramble. Use R U L B with \u2032 or 2 (rotations x y z are fine) \u2014 or switch to NS.'); return; }
     const st = E.applyParsed(parsed, E.solved(), T.syms, T.rotByCorner);
     lastSearch = { ix: E.idx(st), text: txt.replace(/\s+/g, ' ') };
     const target = '#/c/' + lastSearch.ix;
@@ -384,7 +427,7 @@ async function pageHome(main) {
       const bm = await DB.doneMap();
       for (let tries = 0; tries < 4000; tries++) {
         const o = Math.floor(Math.random() * T.reps.length);
-        if (!(bm[o >> 3] & (1 << (o & 7)))) { location.hash = '#/c/' + pairIdOf(T.reps[o]); return; }
+        if (!(bm[o >> 3] & (1 << (o & 7)))) { location.hash = '#/c/' + T.reps[o]; return; }
       }
       toast('We couldn\u2019t find an unsolved position. Looks like they\u2019re all done!');
     } }, 'Take me to an unsolved position'),
@@ -404,9 +447,11 @@ function requestModBlock() {
 function sidePanel(side, label, doneSet, exactView) {
   const shownState = exactView && exactView.state ? exactView.state : side.state;
   const isExact = E.idx(shownState) !== side.id;
+  // the visitor's own search text is shown verbatim (it's already in their
+  // notation); engine-generated scrambles are WCA and convert for display
   const shownScramble = exactView && exactView.scramble
     ? exactView.scramble
-    : (isExact ? E.optimalScramble(shownState, T.dist, false) : side.scramble);
+    : dispAlg(isExact ? E.optimalScramble(shownState, T.dist, false) : side.scramble);
   const wrap = h('div', { class: 'sidepanel' },
     h('div', { class: 'sidehead' },
       h('span', { class: 'sidelabel' }, label),
@@ -475,7 +520,7 @@ function sidePanel(side, label, doneSet, exactView) {
 function symPopup(v, i, total) {
   const scrLine = h('div', { class: 'scrline' });
   const show = rand => {
-    const scr = E.optimalScramble(v.state, T.dist, rand) || '(solved)';
+    const scr = dispAlg(E.optimalScramble(v.state, T.dist, rand)) || '(solved)';
     scrLine.innerHTML = '';
     scrLine.append(h('span', { class: 'scrlabel' }, 'scramble to this view'),
       h('code', { class: 'mono scr' }, scr), copyBtn(scr));
@@ -512,10 +557,11 @@ function symPopup(v, i, total) {
 async function pageClass(main, anyId) {
   if (!(anyId >= 0) || anyId >= E.NSLOTS || T.dist[anyId] < 0) { main.appendChild(h('div', { class: 'card error' }, 'That position doesn\u2019t exist. Check the link and try again.')); return; }
   const exact = E.unidx(anyId);
-  const cid = canonOf(exact);
+  const cid = canonOf(exact);          // 24-sym class id == pairId
   const pair = pairOf(cid);
-  // the URL keeps the exact state that was entered, so the page shows that view — not a rotated stand-in
-  const exactSide = (!pair.self && pair.b && cid === pair.b.id) ? 'b' : 'a';
+  // the URL keeps the exact state that was entered, so the page shows that view — not a rotated
+  // stand-in. Which mirror side it belongs to is decided by the rotation-only canon.
+  const exactSide = (!pair.self && pair.b && T.rotCanonOf(exact) === pair.b.id) ? 'b' : 'a';
   const entered = (lastSearch && lastSearch.ix === anyId) ? lastSearch.text : null;
 
   const sols = await DB.pairSolutions(pair.pairId);
@@ -536,19 +582,19 @@ async function pageClass(main, anyId) {
   const mine = sols.filter(s => s.status === 'pending');
   if (!approved.length) solCard.appendChild(h('p', { class: 'empty' }, 'Nobody has solved this position yet. Yours could be the first. Submit it below.'));
   for (const s of approved) {
-    const mirrored = E.mirrorAlg(s.solution);
+    const shown = dispSol(s), mirrored = dispSolMirror(s);
     const enteredLeft = s.classId === pair.a.id;
     solCard.appendChild(h('div', { class: 'solrow' },
       h('div', { class: 'solcell' },
         h('span', { class: 'soltag' }, pair.self ? 'solution' : (enteredLeft ? 'position' : 'mirror')),
-        h('code', { class: 'mono sol' }, s.solution), copyBtn(s.solution)),
+        h('code', { class: 'mono sol' }, shown), copyBtn(shown)),
       pair.self ? null : h('div', { class: 'solcell' },
         h('span', { class: 'soltag auto' }, (enteredLeft ? 'mirror' : 'position') + ' \u00b7 mirrored for you'),
         h('code', { class: 'mono sol' }, mirrored), copyBtn(mirrored)),
       h('div', { class: 'solmeta' }, s.moves + ' moves', s.showName && s.name ? ' \u00b7 by ' + s.name : '')));
   }
   for (const s of mine) solCard.appendChild(h('div', { class: 'solrow pending' },
-    h('div', { class: 'solcell' }, h('span', { class: 'soltag' }, 'yours \u00b7 awaiting review'), h('code', { class: 'mono sol' }, s.solution)),
+    h('div', { class: 'solcell' }, h('span', { class: 'soltag' }, 'yours \u00b7 awaiting review'), h('code', { class: 'mono sol' }, dispSol(s))),
     h('div', { class: 'solmeta' }, s.moves + ' moves')));
   main.appendChild(solCard);
 
@@ -570,8 +616,10 @@ async function pageClass(main, anyId) {
     sub.appendChild(h('p', { style: 'color:var(--mut);font-size:13.5px;margin:.1em 0 .9em' },
       approved.length + ' of ' + MAX_SOLUTIONS + ' solutions recorded for this scramble.'));
     const ta = h('textarea', { class: 'mono solin', rows: '2',
-      placeholder: "e.g.  y L U' B2 U L'   (rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)" });
-    const status = h('div', { class: 'verifyline' }, 'Type a solution. We check it as you go, against every rotation of both mirrors.');
+      placeholder: NOTA === 'ns'
+        ? "e.g.  R' F R F'   (NS notation \u00b7 rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)"
+        : "e.g.  y L U' B2 U L'   (WCA notation \u00b7 rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)" });
+    const status = h('div', { class: 'verifyline' }, 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every rotation of both mirrors.');
     const nameRow = h('label', { class: 'namerow' },
       h('input', { type: 'checkbox', checked: '' }), ' show my name (', DB.user.name || DB.user.email, ') on this solution');
     const btn = h('button', { class: 'primary', disabled: '' }, 'Submit for review');
@@ -581,7 +629,7 @@ async function pageClass(main, anyId) {
       status.className = 'verifyline ' + (v.ok ? 'good' : (ta.value.trim() ? 'bad' : ''));
       status.textContent = v.ok
         ? '\u2713 Solves the ' + (pair.self || v.side === 'a' ? 'position' : 'mirror') + ' in ' + v.moves + ' moves. Ready to submit.'
-        : (ta.value.trim() ? v.error : 'Type a solution. We check it as you go, against every rotation of both mirrors.');
+        : (ta.value.trim() ? v.error : 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every rotation of both mirrors.');
       if (v.ok) btn.removeAttribute('disabled'); else btn.setAttribute('disabled', '');
     };
     ta.addEventListener('input', onInput);
@@ -594,6 +642,7 @@ async function pageClass(main, anyId) {
         await DB.submit({
           pairId: pair.pairId, classId: sideObj.id, partnerId: partner.id,
           scramble: sideObj.scramble, solution: ta.value.trim().replace(/\s+/g, ' '),
+          notation: NOTA, // the notation the solution text is written in
           moves: v.moves, name: DB.user.name || DB.user.email, showName: nameRow.querySelector('input').checked,
         });
         toast('Thanks! A moderator will review it soon.');
@@ -640,7 +689,7 @@ async function pageBrowse(main, route) {
   for (let i = pg * PER; i < Math.min(list.length, (pg + 1) * PER); i++) {
     const o = list[i], cid = T.reps[o];
     const st = E.unidx(cid);
-    grid.appendChild(h('a', { href: '#/c/' + pairIdOf(cid), class: 'classcell' + (isDone(o) ? ' done' : '') },
+    grid.appendChild(h('a', { href: '#/c/' + cid, class: 'classcell' + (isDone(o) ? ' done' : '') },
       h('div', { html: R.netSVG(st, 124, { cls: 'oonet thumb', thumb: true }) }),
       h('div', { class: 'cellmeta' }, '#' + fmt(o + 1), isDone(o) ? h('span', { class: 'tick' }, ' \u2713') : null)));
   }
@@ -653,7 +702,7 @@ async function pageBrowse(main, route) {
       const un = full.filter(o => !isDone(o));
       if (!un.length) { toast('Every position at this depth is already solved. Try another depth.'); return; }
       const o = un[Math.floor(Math.random() * un.length)];
-      location.hash = '#/c/' + pairIdOf(T.reps[o]);
+      location.hash = '#/c/' + T.reps[o];
     } }, 'random unsolved at this depth'));
   main.appendChild(pager);
 }
@@ -676,14 +725,16 @@ async function pageMod(main) {
       continue;
     }
     const pr = pairOf(s.classId);
-    const v = verifySolution(s.solution, pr);
+    // re-verify in the notation the solution was SUBMITTED in — "R' L R L'"
+    // parses in both notations but means different corners in each.
+    const v = verifySolution(s.solution, pr, s.notation === 'ns' ? 'ns' : 'wca');
     const row = h('section', { class: 'card modrow' },
       h('div', { class: 'modleft', html: R.netSVG(E.unidx(s.classId), 160, { cls: 'oonet thumb', thumb: true }) }),
       h('div', { class: 'modbody' },
         h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'scramble'), h('code', { class: 'mono scr' }, s.scramble)),
         h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'solution'), h('code', { class: 'mono sol' }, s.solution)),
         h('div', { class: 'verifyline ' + (v.ok ? 'good' : 'bad') },
-          v.ok ? '\u2713 verified \u00b7 ' + s.moves + ' moves \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
+          v.ok ? '\u2713 verified \u00b7 ' + s.moves + ' moves' + (s.notation === 'ns' ? ' \u00b7 NS notation' : '') + ' \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
                : '\u2717 fails verification now: ' + v.error)),
       h('div', { class: 'modacts' },
         h('button', { class: 'primary', disabled: v.ok ? null : '', onclick: async ev => {
@@ -727,11 +778,13 @@ function pageAbout(main) {
     h('h2', null, 'How OO solutions work'),
     h('p', null, 'The Skewb has exactly 3,149,280 positions, and every one can be solved in 11 moves or fewer. That part is proven by computer. What a computer can\u2019t tell you is which short solution feels best in your hands. This page collects the community\u2019s pick, one position at a time.'),
     h('h3', null, 'Positions, rotations and mirrors'),
-    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, so those 3,149,280 states come down to ' + fmt(T.reps.length) + ' positions. Each one covers up to 12 rotations, which you can flip through on any position page. A position and its mirror are different solves with mirrored algorithms, so they\u2019re shown side by side. Submit either one and we generate the mirrored version for you. One approved solution marks both as done.'),
+    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, and a position and its left\u2013right mirror are the same solve with mirrored algorithms \u2014 so they count as one. Folding the 12 rotations and the mirror together, those 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions. Every position page shows the position and its mirror side by side, each with up to 12 rotation views. Submit a solution to either one and we generate the mirrored version for you; one approved solution marks the whole position as done.'),
     h('h3', null, 'Notation'),
+    h('p', null, 'Everything is written in standard WCA notation by default. The WCA / NS switch in the top bar changes every scramble and solution on the site to NS notation \u2014 the system the Sarah / NS alg sheets use, where each of the eight corners has its own letter.'),
     h('div', { class: 'nottable' },
-      nrow('R U L B', 'corner moves \u00b7 1 move each', "R' and R2 both mean the inverse twist, still 1 move. WCA notation: R, U and L turn the bottom-right, top-back and bottom-left corners; B turns the back corner."),
-      nrow('x y z', 'rotations \u00b7 0 moves', 'rotate the whole puzzle 90\u00b0, like on a cube; combine freely')),
+      nrow('R U L B', 'WCA \u00b7 1 move each', "in the scrambling hold (white top, green left, red right), R, U and L turn the bottom-right, top-back and bottom-left corners; B turns the hidden back corner. R' and R2 both mean the inverse twist, still 1 move."),
+      nrow('F R B L \u00b7 f r b l', 'NS \u00b7 1 move each', 'uppercase turns the four top corners, lowercase the four bottom corners \u2014 front, right, back, left. WCA R U L B are NS r B l b; NS F f R L twist corners WCA can\u2019t name without a rotation.'),
+      nrow('x y z', 'rotations \u00b7 0 moves', 'rotate the whole puzzle 90\u00b0, like on a cube; combine freely \u00b7 the same in both notations')),
     h('h3', null, 'Submitting and review'),
     h('p', null, 'Submitting solutions is limited to moderators. Solutions can be up to 15 moves and are checked automatically: they have to really solve the scramble, from any rotation, on either mirror. A moderator then reviews each one before it goes live, and we check it again at that point. Each scramble keeps at most ' + MAX_SOLUTIONS + ' solutions, so once two are approved that position is settled.'),
     h('h3', null, 'Becoming a moderator'),

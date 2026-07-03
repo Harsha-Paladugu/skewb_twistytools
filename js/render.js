@@ -1,12 +1,21 @@
 /* Skewbiks.com — Diagram renderer: 2D dual-view net + draggable 3D view. */
 (function(){
 // Skewb OO — renderer.
-// 2D: two fixed orthographic corner views side by side — "front" (U/F/R) and
-//     "back" (D/B/L) — every one of the 30 stickers visible exactly once.
+// 2D: two fixed orthographic corner views side by side — "front" (U/F/L, the
+//     WCA scrambling hold: white top, green left, red right, UFL corner toward
+//     you) and "back" (D/B/R) — every one of the 30 stickers visible exactly
+//     once. Matching the scrambling hold means a scramble executed in
+//     competition orientation looks exactly like the front view, and a
+//     position and its LR mirror render as visual mirror images.
 // 3D: orthographic render of the real cube with the skewb cut (4 corner
 //     triangles + center diamond per face), rotatable (yaw/pitch).
-// All sticker colors come from the engine's facelet model (E.toFacelets), so
-// the renderer carries no move/twist logic of its own.
+// All sticker colors come from the engine's facelet model via
+// E.toFixedFacelets — the WCA-scrambling-frame presentation, in which the
+// white/red/green (UFL) corner always reads solved, exactly like a real cube
+// scrambled in the WCA hold. (Raw E.toFacelets is the engine's internal
+// pinned frame, which after any written B is the real cube rotated about the
+// UFL–DBR diagonal — rendering that made B look like a UFL twist.) The
+// renderer carries no move/twist logic of its own.
 // Browser loads engine.js first (window.OOEngine). Node tools stub
 // globalThis.window before requiring engine.js for its side effect.
 const E = (typeof window !== 'undefined' && window.OOEngine) ? window.OOEngine
@@ -100,13 +109,13 @@ function renderView(fl, M, ox, oy) {
   return polys.join('');
 }
 
-/* ---- 2D net: front (U/F/R) + back (D/B/L) corner views ---- */
+/* ---- 2D net: front (U/F/L, the WCA hold) + back (D/B/R) corner views ---- */
 const ISO = Math.atan(1 / Math.sqrt(2));            // 35.26°
-const M_FRONT = viewMatrix(-Math.PI / 4, ISO);      // shows U, F, R
-const M_BACK  = viewMatrix(Math.PI - Math.PI / 4, -ISO); // antipode: D, B, L
+const M_FRONT = viewMatrix(Math.PI / 4, ISO);       // shows U, F, L (UFL toward viewer)
+const M_BACK  = viewMatrix(Math.PI + Math.PI / 4, -ISO); // antipode: D, B, R
 function netSVG(state, width, opts) {
   const o = opts || {};
-  const fl = E.toFacelets(state);
+  const fl = E.toFixedFacelets(state);
   const caps = o.thumb ? '' :
     `<text x="0" y="2.05" class="dcap" font-size="0.24" fill="#9fadc4" text-anchor="middle">front</text>` +
     `<text x="3.7" y="2.05" class="dcap" font-size="0.24" fill="#9fadc4" text-anchor="middle">back</text>`;
@@ -118,11 +127,11 @@ function netSVG(state, width, opts) {
 function iso3dSVG(state, width, yawOrM, pitch, opts) {
   const o = opts || {};
   const M = Array.isArray(yawOrM) ? yawOrM : viewMatrix(yawOrM, pitch);
-  const fl = E.toFacelets(state);
+  const fl = E.toFixedFacelets(state);
   return `<svg viewBox="-2 -2 4 4" width="${width}" height="${width}" class="${o.cls || 'oonet oo3d'}" role="img" aria-label="puzzle state, 3D view">${renderView(fl, M, 0, 0)}</svg>`;
 }
 
-const DEFAULT_VIEW = { yaw: -0.6, pitch: 0.45 }; // shows U, F and R from a little above
+const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.45 }; // shows U, L and F from a little above (WCA-hold side)
 
 const api = { netSVG, iso3dSVG, viewMatrix, rotateView, COLORS, STICKERS, DEFAULT_VIEW };
 if (typeof module !== 'undefined') module.exports = api;

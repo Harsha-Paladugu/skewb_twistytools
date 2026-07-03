@@ -52,6 +52,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 .authbox{display:flex;align-items:center;gap:12px}
 .whoami{color:var(--mut);font-size:14px}
 .demobadge{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--yellow);border:1px dashed rgba(242,207,60,.5);border-radius:6px;padding:2px 8px}
+/* WCA / NS notation switch (rendered by pages that show algs) */
+.notaswitch{display:flex;align-items:stretch;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.notabtn{background:transparent;border:0;color:var(--mut);padding:.3em .7em;font-size:12px;letter-spacing:.05em;cursor:pointer}
+.notabtn + .notabtn{border-left:1px solid var(--line2)}
+.notabtn.on{color:var(--actink);background:var(--act);font-weight:600}
 .page{max-width:1060px;margin:0 auto;padding:30px 24px 80px}
 /* home */
 .homeintro{margin:34px 0 24px;max-width:640px}

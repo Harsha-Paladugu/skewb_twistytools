@@ -157,6 +157,34 @@ for (const A of AXIS) { const d = S4[A].fc[0][2];
 // corner DBR). Used by tests against TNoodle vectors and by the renderer.
 const WCA_FACELET_MOVES = { R: MFP.DFR, U: MFP.UBR, L: MFP.DBL, B: moveFaceletPerm('DBR') };
 
+// Whole-cube 240° rotation about the UFL–DBR diagonal, extracted from the
+// machine-verified deep-cut identity  B = (native UFL move) then (this
+// rotation)  — the factors commute. Needed because the pinned state model
+// absorbs each written B's rotation into the parsing frame: a pinned state's
+// raw facelets can show the UFL corner twisted, which a real cube scrambled
+// in the WCA hold NEVER does (no WCA move touches the white/red/green
+// corner's half — its three stickers are invariant under R, U, L and B).
+const ROT240_UFL = (() => {
+  const inv = new Array(30);
+  for (let i = 0; i < 30; i++) inv[MFP.UFL[i]] = i;
+  const r = new Array(30);
+  for (let i = 0; i < 30; i++) r[i] = inv[WCA_FACELET_MOVES.B[i]];
+  return r;
+})();
+// Facelets of a state as a cube scrambled in the WCA hold actually looks:
+// rotate by 240° x fx[UFL] about the UFL–DBR diagonal, so the white/red/green
+// corner always reads solved. For EVERY rotation-free WCA alg A,
+// toFixedFacelets(state after A) equals the literal fixed-frame facelet
+// result of A (tests assert this against the TNoodle vectors) — so a diagram
+// drawn from these facelets matches a real cube after the printed scramble.
+// All rendering goes through this; toFacelets stays the raw pinned-frame view
+// (fromFacelets can only read pinned facelets — don't feed it these).
+function toFixedFacelets(s) {
+  let fl = toFacelets(s);
+  for (let k = 0; k < s.fx[AXIS_IDX.UFL]; k++) fl = applyFaceletPerm(fl, ROT240_UFL);
+  return fl;
+}
+
 function move(s, axisName, prime) {
   const t = S4[axisName], a = AXIS_IDX[axisName], n = prime ? 2 : 1;
   for (let k = 0; k < n; k++) {
@@ -386,19 +414,43 @@ function makeMirrorCanon(syms) {
     return best;
   };
 }
+// full 24-element fold (12 rotations + 12 mirror images): 3,149,280 states
+// come down to 131,391 classes (oracle in tools/verify-space.mjs). This is the
+// census's class key — a position and its mirror share one class.
+function makeFullCanon(syms) {
+  return function fcanon(s) {
+    let best = Infinity;
+    for (const sym of syms.all) { const v = idx(sym.apply(s)); if (v < best) best = v; }
+    return best;
+  };
+}
 
 // ---------------- solution / scramble parsing ----------------
-// Tokens: R U L B (+ ' / 2 / 2', order-3 twists: X2 == X'), rotations x y z
-// (+ ' / 2 / 2', order 4). No tips, no wides. Lowercase is unparseable.
+// WCA tokens: R U L B (+ ' / 2 / 2', order-3 twists: X2 == X'), rotations
+// x y z (+ ' / 2 / 2', order 4). No tips, no wides. Lowercase is unparseable.
+//
+// NS ("Rubik'skewb") notation — parseAlg(str, 'ns'): all EIGHT corners get
+// letters. Uppercase F R B L = the four TOP corners, lowercase f r b l = the
+// four BOTTOM corners, named front/right/back/left in the WCA scrambling hold
+// (UFL corner toward you). Plain = 120° CW seen from outside that corner,
+// ' = CCW; x y z rotations as in WCA. Source (the notation the Sarah/NS 2.0
+// alg sheets use): rubikskewb.web.fc2.com/skewb/notation.html — see
+// docs/skewb-ground-truth.md. The WCA letters are the NS subset {r, B, l, b}
+// (WCA R=NS r, U=B, L=l, B=b — a pure token rename); NS F f R L twist corners
+// WCA can't name without rotations.
+const NS_CORNER = { F:'UFL', R:'UFR', B:'UBR', L:'UBL', f:'DFL', r:'DFR', b:'DBR', l:'DBL' };
+const WCA_TO_NS = { R:'r', U:'B', L:'l', B:'b' };
 const amtOf = m => (m === "'" || m === '2') ? 2 : 1;              // order-3 moves
 const rotAmtOf = m => m === "'" ? 3 : (m === '2' || m === "2'") ? 2 : 1; // order-4 rotations
-function parseAlg(str) {
+function parseAlg(str, notation) {
+  const ns = notation === 'ns';
   const out = [];
   const toks = String(str).replace(/[()，,]/g, ' ').trim().split(/\s+/).filter(Boolean);
   for (const t of toks) {
     let m;
     if ((m = t.match(/^([xyz])(2'|2|')?$/))) { out.push({ kind: 'rot', f: m[1], amt: rotAmtOf(m[2]) }); continue; }
-    if ((m = t.match(/^([ULRB])(2'|2|')?$/))) { out.push({ kind: 'move', f: m[1], amt: amtOf(m[2]) }); continue; }
+    if (!ns && (m = t.match(/^([ULRB])(2'|2|')?$/))) { out.push({ kind: 'move', f: m[1], c: WCA_CORNER[m[1]], amt: amtOf(m[2]) }); continue; }
+    if (ns && (m = t.match(/^([FRBLfrbl])(2'|2|')?$/))) { out.push({ kind: 'move', f: m[1], c: NS_CORNER[m[1]], amt: amtOf(m[2]) }); continue; }
     return null;
   }
   return out;
@@ -428,15 +480,20 @@ function applyParsed(parsed, state, _syms, rotBy) {
       for (let k = 0; k < t.amt; k++) frame = frameCompose(frame, rotBy.xyz[t.f]);
       continue;
     }
-    const phys = frame.corner[WCA_CORNER[t.f]];
+    const phys = frame.corner[t.c || WCA_CORNER[t.f]];
     if (AXIS_IDX[phys] !== undefined) {
       for (let k = 0; k < t.amt; k++) move(s, phys, false);
     } else {
       // written move about a free corner == native move about its opposite axis
-      // corner + a frame rotation about that diagonal (deep-cut identity).
+      // corner + a LEFTOVER 240°-per-quarter-turn rotation of the real cube
+      // about that diagonal (deep-cut identity). The frame resolves written
+      // letters through the INVERSE of the accumulated leftover rotation, so
+      // it advances by +amt powers of the native-direction 120° rotation.
+      // (Getting this direction wrong makes every move AFTER a B act on the
+      // wrong corner — caught against the TNoodle fixed-frame vectors.)
       const ax = OPP[phys];
       for (let k = 0; k < t.amt; k++) move(s, ax, false);
-      const steps = (2 * t.amt) % 3;
+      const steps = t.amt % 3;
       for (let k = 0; k < steps; k++) frame = frameCompose(rotBy.byCorner[ax], frame);
     }
   }
@@ -456,7 +513,7 @@ function nativeToWCA(alg, rotBy) {
       // this axis is currently the opposite of written B's corner -> emit B
       if (OPP[frame.corner[WCA_CORNER.B]] !== axisName) throw new Error('frame resolution failed');
       letter = 'B';
-      const steps = (2 * amt) % 3;
+      const steps = amt % 3; // same frame walk as applyParsed's free-corner branch
       for (let k = 0; k < steps; k++) frame = frameCompose(rotBy.byCorner[axisName], frame);
     }
     out.push(letter + (amt === 2 ? "'" : ''));
@@ -464,12 +521,57 @@ function nativeToWCA(alg, rotBy) {
   return out.join(' ');
 }
 
+// flatten a parsed token stream to native axis tokens (rotations are absorbed
+// into the frame; free-corner letters via the deep-cut identity). Exactly
+// mirrors applyParsed's move branch, so state effect and movecount agree.
+const NATIVE_LETTER = { UBR:'U', DBL:'L', DFR:'R', UFL:'F' };
+function parsedToNative(parsed, rotBy) {
+  rotBy = rotBy || makeFrames(null);
+  const out = [];
+  let frame = rotBy.id;
+  for (const t of parsed) {
+    if (t.kind === 'rot') { for (let k = 0; k < t.amt; k++) frame = frameCompose(frame, rotBy.xyz[t.f]); continue; }
+    const phys = frame.corner[t.c || WCA_CORNER[t.f]];
+    if (AXIS_IDX[phys] !== undefined) {
+      out.push(NATIVE_LETTER[phys] + (t.amt === 2 ? "'" : ''));
+    } else {
+      const ax = OPP[phys];
+      out.push(NATIVE_LETTER[ax] + (t.amt === 2 ? "'" : ''));
+      const steps = t.amt % 3; // same frame walk as applyParsed's free-corner branch
+      for (let k = 0; k < steps; k++) frame = frameCompose(rotBy.byCorner[ax], frame);
+    }
+  }
+  return out;
+}
+// WCA -> NS display is a pure token rename (R->r, U->B, L->l, B->b; rotations
+// unchanged). Non-WCA tokens pass through untouched (best-effort display).
+function wcaToNS(alg) {
+  return String(alg).trim().split(/\s+/).filter(Boolean).map(t => {
+    const m = t.match(/^([ULRB])(2'|2|')?$/);
+    return m ? WCA_TO_NS[m[1]] + (m[2] || '') : t;
+  }).join(' ');
+}
+// NS -> WCA re-derives through the native stream: same state, same movecount,
+// but input rotations are absorbed (NS F/f/R/L have no WCA letter). Null if
+// the input doesn't parse as NS.
+function nsToWCA(alg) {
+  const p = parseAlg(alg, 'ns');
+  return p === null ? null : nativeToWCA(parsedToNative(p).join(' '));
+}
+function convertAlg(alg, from, to) {
+  if (from === to) return alg;
+  return to === 'ns' ? wcaToNS(alg) : nsToWCA(alg);
+}
+
 // mirror a solution string token-by-token (the x+z=0 reflection):
 // R<->L, U->U', B->B'; rotations: y->y', x<->z with reversed amount.
+// The same letter map covers NS tokens too: the reflection fixes UFL, UBR,
+// DFL, DBR (NS F, B, f, b — direction flips) and swaps DFR<->DBL (r<->l),
+// UFR<->UBL (NS R<->L).
 function mirrorToken(t) {
   let m;
-  if ((m = t.match(/^([ULRB])(2'|2|')?$/))) {
-    const map = { U:'U', B:'B', R:'L', L:'R' };
+  if ((m = t.match(/^([ULRBFfrbl])(2'|2|')?$/))) {
+    const map = { U:'U', B:'B', R:'L', L:'R', F:'F', f:'f', b:'b', r:'l', l:'r' };
     return map[m[1]] + (amtOf(m[2]) === 1 ? "'" : '');
   }
   if ((m = t.match(/^([xyz])(2'|2|')?$/))) {
@@ -538,7 +640,7 @@ function realCanonKey(st) {
 }
 function preprocessAlg(a) {
   let s = ' ' + String(a).trim() + ' ';
-  s = s.replace(/([ULRB])2'/g, '$1');           // order-3: X2' == X
+  s = s.replace(/([ULRBFfrbl])2'/g, '$1');      // order-3: X2' == X (WCA + NS letters)
   return s.trim().replace(/\s+/g, ' ');
 }
 // inverse of a state-as-permutation (the state an alg solves)
@@ -566,7 +668,7 @@ function caseStateOf(algStr) {
 function normAlg(alg) {
   const toks = String(alg).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean), out = [];
   for (let i = 0; i < toks.length; i++) {
-    const m = /^([ULRB])('?)$/.exec(toks[i]);
+    const m = /^([ULRBFfrbl])('?)$/.exec(toks[i]);
     if (m && toks[i + 1] === toks[i]) { out.push(m[1] + (m[2] ? "2'" : '2')); i++; }
     else out.push(toks[i]);
   }
@@ -594,15 +696,17 @@ function algSolvesKey(algStr, key) {
 module.exports = {
   FACES, S4, G4, OPP, MOVES, NSLOTS,
   solved, copy, eq, move, applyMoveIdx, idx, unidx,
-  buildSyms, symFromFacePerm, applySym, composeSym, makeCanon, makeMirrorCanon,
+  buildSyms, symFromFacePerm, applySym, composeSym, makeCanon, makeMirrorCanon, makeFullCanon,
   parseAlg, countMoves, applyParsed, makeFrames, mirrorAlg, mirrorToken,
   optimalSolution, optimalScramble, invertAlg, faceCompose, FACE_ID,
+  // notation systems: WCA (default) and NS ("Rubik'skewb", the Sarah/NS sheets)
+  NS_CORNER, wcaToNS, nsToWCA, convertAlg, parsedToNative,
   // keying + alg→case (single source of truth)
   stateKey, realCanonKey, keyToState, permsOf, permParity, enumFreeSlots,
   preprocessAlg, inverseState, caseStateOf, algSolvesKey, normAlg, prependAUF,
   // skewb-specific: geometry + facelet model (renderer, tools, tests)
   AXIS, FREE, CFACES, STICKER_POS, CPOS, WCA_CORNER, CLASS,
-  toFacelets, fromFacelets, solvedFacelets, moveFaceletPerm: MFP, applyFaceletPerm,
+  toFacelets, toFixedFacelets, fromFacelets, solvedFacelets, moveFaceletPerm: MFP, applyFaceletPerm,
   WCA_FACELET_MOVES, nativeToWCA,
 };
 

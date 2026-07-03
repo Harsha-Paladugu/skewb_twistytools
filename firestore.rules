@@ -41,7 +41,10 @@ service cloud.firestore {
       // Create: only a moderator may submit, and only their own pending solution.
       // The field set is whitelisted (no extra/oversized docs) and every field the
       // client writes (js/oo.js submit()) is type/size validated. State-index bounds
-      // are [0, NSLOTS) where NSLOTS = 720*64*27*3 = 3,732,480 (engine.js).
+      // are [0, NSLOTS) where NSLOTS = 360*12*2187 = 9,447,840 (engine.js).
+      // `notation` records which system the solution text is written in — the
+      // client re-verifies in that notation ("R' L R L'" parses in both but
+      // means different corners).
       // NOTE: the "max 2 approved solutions per scramble" cap can't be enforced
       // here — rules can't count sibling docs — so it's applied app-side in js/oo.js
       // (submit form gating + the moderator approval step).
@@ -50,8 +53,9 @@ service cloud.firestore {
         && request.resource.data.status == 'pending'
         && request.resource.data.keys().hasOnly([
             'uid', 'status', 'createdAt', 'pairId', 'classId', 'partnerId',
-            'scramble', 'solution', 'moves', 'name', 'showName'])
+            'scramble', 'solution', 'notation', 'moves', 'name', 'showName'])
         && request.resource.data.createdAt == request.time
+        && request.resource.data.notation in ['wca', 'ns']
         && request.resource.data.moves is int
         && request.resource.data.moves >= 1 && request.resource.data.moves <= 15
         && request.resource.data.solution is string
@@ -64,11 +68,11 @@ service cloud.firestore {
         && request.resource.data.name.size() < 256
         && request.resource.data.showName is bool
         && request.resource.data.classId is int
-        && request.resource.data.classId >= 0 && request.resource.data.classId < 3732480
+        && request.resource.data.classId >= 0 && request.resource.data.classId < 9447840
         && request.resource.data.partnerId is int
-        && request.resource.data.partnerId >= 0 && request.resource.data.partnerId < 3732480
+        && request.resource.data.partnerId >= 0 && request.resource.data.partnerId < 9447840
         && request.resource.data.pairId is int
-        && request.resource.data.pairId >= 0 && request.resource.data.pairId < 3732480;
+        && request.resource.data.pairId >= 0 && request.resource.data.pairId < 9447840;
       // Update: a moderator may only flip the review fields (status -> approved/
       // rejected, plus reviewedBy); an admin may edit more broadly if ever needed.
       // This stops a moderator account from rewriting submitted solution content.

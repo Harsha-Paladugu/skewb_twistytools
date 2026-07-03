@@ -57,29 +57,33 @@ check('free-tetrad twist sum ≡ 0 everywhere', badFree, 0);
 check('fixed-twist sum ≡ free-perm class everywhere', badLink, 0);
 console.log(`  constraints checked in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
-// symmetry classes
+// symmetry classes — through the same engine closures the census uses
+// (makeCanon / makeMirrorCanon / makeFullCanon; makeFullCanon == the
+// tables.js class key, so this pins the census's 131,391 directly).
 t0 = Date.now();
 const SYMS = E.buildSyms();
-const canon = E.makeCanon(SYMS);
+const canon = E.makeCanon(SYMS), mcanon = E.makeMirrorCanon(SYMS), fcanon = E.makeFullCanon(SYMS);
 const seen12 = new Uint8Array(E.NSLOTS), seen24 = new Uint8Array(E.NSLOTS);
-let n12 = 0, n24 = 0, anti24 = 0;
+let n12 = 0, n24 = 0, anti24 = 0, fullMismatch = 0;
 for (let i = 0; i < dist.length; i++) {
   if (dist[i] < 0) continue;
   const s = E.unidx(i);
   const c12 = canon(s);
   if (!seen12[c12]) { seen12[c12] = 1; n12++; }
-  let c24 = c12;
-  for (const sym of SYMS.mirrors) { const v = E.idx(sym.apply(s)); if (v < c24) c24 = v; }
+  const c24 = Math.min(c12, mcanon(s));
+  // spot-check the single-closure fold against the min-of-two computation
+  if ((i & 65535) === 0 && fcanon(s) !== c24) fullMismatch++;
   if (!seen24[c24]) { seen24[c24] = 1; n24++; if (dist[i] === 11) anti24++; }
 }
 check('classes under 12 rotations = 262,674', n12, 262674);
-check('classes under 24 (rot+mirror) = 131,391', n24, 131391);
+check('classes under 24 (rot+mirror) = 131,391 (the census count)', n24, 131391);
+check('makeFullCanon == min(makeCanon, makeMirrorCanon) on the sample', fullMismatch, 0);
 check('depth-11 antipode classes (24-group) = 12', anti24, 12);
 console.log(`  classes counted in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 console.log('');
 console.log('RECORD for downstream milestones:');
 console.log('  index bound (firestore.rules classId/partnerId/pairId): < ' + E.NSLOTS.toLocaleString());
-console.log('  census classes (oo.js copy): 262,674 rotation classes / 131,391 mirror pairs');
+console.log('  census classes (oo.js copy): 131,391 positions (24-sym fold; 262,674 under rotations only)');
 console.log(failed ? 'FAILED' : 'ALL CHECKS PASS');
 process.exitCode = failed ? 1 : 0;

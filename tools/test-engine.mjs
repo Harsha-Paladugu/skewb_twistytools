@@ -194,6 +194,39 @@ t('bridge: facelet path and applyParsed agree on solvedness (incl. B algs)', () 
   return true;
 });
 
+// ---------------- display frame (toFixedFacelets) ----------------
+// The renderer draws E.toFixedFacelets — the WCA-scrambling-hold presentation.
+// It must equal the LITERAL fixed-frame facelet result of the alg, so a
+// diagram always matches a real cube after the printed scramble, and the
+// white/red/green (UFL) corner never appears to move or twist.
+t('display: toFixedFacelets matches every single-move TNoodle vector (incl. B/B\')', () => {
+  for (const [tok, want] of Object.entries(VEC)) {
+    const st = E.applyParsed(E.parseAlg(tok), E.solved(), SYMS, ROTBY);
+    if (E.toFixedFacelets(st).join() !== FSTR(want)) return false;
+  }
+  return true;
+});
+t('display: KPW 2015 scramble renders the published fixed-frame state', () => {
+  const st = E.applyParsed(E.parseAlg("L R L U' B R' U' R' L R B"), E.solved(), SYMS, ROTBY);
+  return E.toFixedFacelets(st).join() === FSTR('UUBUB LDDBL DFRLU BFRRU FRLFD RLFBD');
+});
+t('display: toFixedFacelets == fixed-frame facelet path for random WCA algs', () => {
+  for (let i = 0; i < 40; i++) {
+    const a = rndWcaAlg(1 + rndInt(12));
+    const st = E.applyParsed(E.parseAlg(a), E.solved(), SYMS, ROTBY);
+    if (E.toFixedFacelets(st).join() !== ffApply(a).join()) return false;
+  }
+  return true;
+});
+t('display: the white/red/green corner reads solved on every displayed state', () => {
+  // UFL's three stickers are U3 / F1 / L2 (flat facelet indices 3, 11, 22)
+  for (let i = 0; i < 60; i++) {
+    const fl = E.toFixedFacelets(rndState());
+    if (fl[3] !== 0 || fl[11] !== 2 || fl[22] !== 4) return false;
+  }
+  return true;
+});
+
 // ---------------- symmetries ----------------
 t('sym homomorphism: every sym conjugates each move to a single move', () => {
   const states = Array.from({ length: 12 }, () => rndState());
@@ -276,6 +309,71 @@ t('nativeToWCA: converted alg reproduces the native state, same length', () => {
     const wca = E.nativeToWCA(toks.join(' '), ROTBY);
     if (E.countMoves(E.parseAlg(wca)) !== n) return false;
     if (!E.eq(E.applyParsed(E.parseAlg(wca), E.solved(), SYMS, ROTBY), s)) return false;
+  }
+  return true;
+});
+
+// ---------------- NS notation (parseAlg(str,'ns'), converters, mirror) ----------------
+const stOf = (a, nota) => E.applyParsed(E.parseAlg(a, nota), E.solved(), SYMS, ROTBY);
+function rndNsAlg(n, rots) {
+  const letters = ['F','R','B','L','f','r','b','l'], out = [];
+  for (let i = 0; i < n; i++) {
+    if (rots && rndInt(4) === 0) out.push('xyz'[rndInt(3)] + ['', "'", '2'][rndInt(3)]);
+    else out.push(letters[rndInt(8)] + (rndInt(2) ? "'" : ''));
+  }
+  return out.join(' ');
+}
+t('parseAlg NS: WCA R U L B are the NS subset r B l b (same corners)', () => {
+  for (const [w, n] of [['R','r'], ['U','B'], ['L','l'], ['B','b']]) {
+    if (!E.eq(stOf(w), stOf(n, 'ns'))) return false;
+    if (!E.eq(stOf(w + "'"), stOf(n + "'", 'ns'))) return false;
+  }
+  return true;
+});
+t('parseAlg NS: F is the native UFL half-twist; U / lone F(wca) unparseable', () => {
+  const nat = E.solved(); E.move(nat, 'UFL', false);
+  return E.eq(stOf('F', 'ns'), nat) && E.parseAlg('U', 'ns') === null && E.parseAlg('F') === null;
+});
+t('parseAlg NS: free-corner letters equal rotation conjugates of WCA B', () =>
+  E.eq(stOf('R', 'ns'), stOf('x2 B x2')) &&
+  E.eq(stOf('f', 'ns'), stOf('y2 B y2')) &&
+  E.eq(stOf('L', 'ns'), stOf('z2 B z2')));
+t('wcaToNS: pure token rename (official KPW scramble)', () =>
+  E.wcaToNS("L R L U' B R' U' R' L R B") === "l r l B' b r' B' r' l r b");
+t('wcaToNS -> nsToWCA: state + movecount round-trip on random WCA algs', () => {
+  for (let i = 0; i < 30; i++) {
+    const a = 'y ' + rndWcaAlg(8) + " z' " + rndWcaAlg(3);
+    const back = E.nsToWCA(E.wcaToNS(a));
+    if (back === null || !E.eq(stOf(back), stOf(a))) return false;
+    if (E.countMoves(E.parseAlg(back)) !== E.countMoves(E.parseAlg(a))) return false;
+  }
+  return true;
+});
+t('nsToWCA: full 8-letter NS algs (with rotations) convert to the same state', () => {
+  for (let i = 0; i < 30; i++) {
+    const a = rndNsAlg(1 + rndInt(10), true);
+    const w = E.nsToWCA(a);
+    if (w === null || !E.eq(stOf(w), stOf(a, 'ns'))) return false;
+    if (E.countMoves(E.parseAlg(w)) !== E.countMoves(E.parseAlg(a, 'ns'))) return false;
+  }
+  return true;
+});
+t('mirrorAlg: NS letters (r->l\', F->F\'), involution, mirrored state', () => {
+  if (E.mirrorAlg('r') !== "l'" || E.mirrorAlg('F') !== "F'" || E.mirrorAlg("b'") !== 'b') return false;
+  const mSym = E.symFromFacePerm({ U:'U', D:'D', R:'B', B:'R', F:'L', L:'F' }, true);
+  for (let i = 0; i < 15; i++) {
+    const a = rndNsAlg(6, false);
+    if (E.mirrorAlg(E.mirrorAlg(a)) !== a) return false;
+    if (!E.eq(stOf(E.mirrorAlg(a), 'ns'), E.applySym(mSym, stOf(a, 'ns')))) return false;
+  }
+  return true;
+});
+t('makeFullCanon: equals min(rot canon, mirror canon), 24-sym invariant', () => {
+  const canon = E.makeCanon(SYMS), mcanon = E.makeMirrorCanon(SYMS), fcanon = E.makeFullCanon(SYMS);
+  for (let i = 0; i < 10; i++) {
+    const s = rndState(), c = fcanon(s);
+    if (c !== Math.min(canon(s), mcanon(s))) return false;
+    for (const sym of SYMS.all) if (fcanon(E.applySym(sym, s)) !== c) return false;
   }
   return true;
 });

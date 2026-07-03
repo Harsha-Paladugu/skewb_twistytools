@@ -8,7 +8,7 @@
  * that cache, with SEPARATE keys per shape so they can't collide:
  *
  *   oo-dist-v1     -> { dist }                  (built by either page, reused by both)
- *   oo-classes-v1  -> { reps, depths }          (census only)
+ *   oo-classes-v2  -> { reps, depths }          (census only; 24-sym fold, 131,391 classes)
  *
  * Loaded as a classic browser script before js/oo.js / js/solver.js. The engine
  * (window.OOEngine) is passed in, so this file has no load-order dep on it beyond
@@ -21,7 +21,10 @@
   const module = { exports: {} };
   const DB_NAME = 'skewbiks-oo', STORE = 't';
   const KEY_DIST = 'oo-dist-v1';        // { dist: ArrayBuffer }
-  const KEY_CLASSES = 'oo-classes-v1';  // { reps: ArrayBuffer, depths: ArrayBuffer }
+  // v2: classes fold all 24 symmetries (12 rotations + 12 mirrors) -> 131,391
+  // classes; v1 folded rotations only (262,674) and is deleted on sight.
+  const KEY_CLASSES = 'oo-classes-v2';  // { reps: ArrayBuffer, depths: ArrayBuffer }
+  const KEY_CLASSES_V1 = 'oo-classes-v1';
   const REACHABLE = 3149280;            // progress denominator (reachable states)
 
   function openDB() {
@@ -51,6 +54,18 @@
       await new Promise((res, rej) => {
         const tx = db.transaction(STORE, 'readwrite');
         tx.objectStore(STORE).put(payload, key);
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+      });
+      db.close();
+    } catch (e) { /* cache is best-effort */ }
+  }
+  async function idbDel(key) {
+    if (!('indexedDB' in window)) return;
+    try {
+      const db = await openDB();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(key);
         tx.oncomplete = res; tx.onerror = () => rej(tx.error);
       });
       db.close();
@@ -86,14 +101,17 @@
   }
 
   // Canonical-class enumeration (requires dist) -> { reps:Uint32Array, depths:Uint8Array }.
-  // Cached under KEY_CLASSES.
+  // Classes fold the full 24-element symmetry group (12 rotations + 12 mirror
+  // images), so a position and its mirror are ONE class: 131,391 classes
+  // (oracle: tools/verify-space.mjs). Cached under KEY_CLASSES.
   async function loadOrBuildClassTables(E, dist, report, tick) {
+    idbDel(KEY_CLASSES_V1); // reclaim the stale rotation-only table (~1.3 MB)
     const cached = await idbGet(KEY_CLASSES);
     if (cached && cached.reps && cached.depths) {
       if (report) report('cache', 1, 1);
       return { reps: new Uint32Array(cached.reps), depths: new Uint8Array(cached.depths) };
     }
-    const canon = E.makeCanon(E.buildSyms());
+    const canon = E.makeFullCanon(E.buildSyms());
     const reps = [], depths = [];
     for (let i = 0; i < E.NSLOTS; i++) {
       if (dist[i] < 0) continue;
@@ -107,6 +125,6 @@
     return { reps: repsArr, depths: depthsArr };
   }
 
-  module.exports = { idbGet, idbPut, loadOrBuildDist, loadOrBuildClassTables, KEY_DIST, KEY_CLASSES };
+  module.exports = { idbGet, idbPut, idbDel, loadOrBuildDist, loadOrBuildClassTables, KEY_DIST, KEY_CLASSES };
   window.OOTables = module.exports;
 })();

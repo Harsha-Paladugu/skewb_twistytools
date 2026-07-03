@@ -26,9 +26,30 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
   `js/tables.js` parameterized (IndexedDB `skewbiks-oo`); `js/oo.js`/`oo.html` Skewb copy.
   Verified: in-browser first build ~18 s; census shows 262,674 positions (= oracle);
   mirror pairs, 12 unique views, verified scrambles, instant cached reload.
+  - **2026-07-03 update (user request):** census classes now fold the FULL 24-element
+    group (`E.makeFullCanon`, cache key `oo-classes-v2`) → **131,391 positions**; a
+    position + its mirror are one class/ordinal/done-bit (pairId == classId of the rep;
+    old `#/c/<id>` links still resolve). Notation: WCA everywhere by default + a
+    **WCA / NS switch** in the nav (`localStorage skewbiks-notation`; engine gained
+    `parseAlg(str,'ns')`, `wcaToNS`/`nsToWCA`/`convertAlg`, NS-aware `mirrorAlg` —
+    mapping in skewb-ground-truth.md §NS). Solutions store the notation they were typed
+    in (`notation: 'wca'|'ns'` doc field; rules + fixtures updated). Net/3D re-anchored
+    to the WCA scrambling hold (front = U/F/L, UFL toward viewer; back = D/B/R) so
+    scrambles match the in-hand view and mirror pairs render as visual reflections.
+  - **2026-07-03 fix 2 (user report: "B looked like an F move"):** two frame bugs —
+    `applyParsed`/`nativeToWCA` advanced the B-frame in the WRONG DIRECTION (every move
+    after a written B acted on the wrong corner; self-consistent in-engine, wrong vs a
+    real cube), and diagrams rendered raw pinned facelets (UFL corner appeared to twist).
+    Fixed: frame steps `amt % 3`, and all rendering now goes through `E.toFixedFacelets`
+    (WCA-hold presentation; white/red/green corner always reads solved). Display now
+    matches the TNoodle fixed-frame vectors + KPW 2015 scramble exactly (4 new tests;
+    see ground-truth §"Two frame rules"). Census dist/class tables unaffected (native
+    moves only). Old demo-mode solutions verified under the inverted frame may fail
+    re-verification — expected.
 - [ ] **M4 — Firebase.** Create project + web app + Firestore (Firebase MCP can do this);
-  creds into `js/config.js`; rules bound `3732480 → 9447840` (firestore.rules :67,:69,:71),
-  keep `moves <= 15` (:56); update `test/firestore.rules.test.mjs` fixtures; deploy rules.
+  creds into `js/config.js`; ~~rules bound `3732480 → 9447840`~~ (DONE 2026-07-03, plus the
+  `notation` field + fixtures — still needs the emulator run + deploy);
+  keep `moves <= 15`; deploy rules.
   USER steps: enable the Google sign-in provider (console-only), sign in on oo.html, read
   uid from the About tab (uids are project-scoped — the pyraminx uid does not carry), then
   create `admins/{uid}` (MCP write bypasses rules, same as console). Gate: `npm run
@@ -69,5 +90,7 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
 ## Recorded numbers (from M1 verification — use these, don't recompute by hand)
 
 3,149,280 reachable states; depth histogram = OEIS A079745 (max 11, 90 antipodes);
-262,674 rotation classes; 131,391 mirror pairs; NSLOTS/rules bound 9,447,840;
-per-depth class counts 1/2/4/24/144/854/4,943/26,272/102,155/121,404/6,852/19.
+262,674 rotation classes; **131,391 census positions (24-sym fold — what oo.html counts)**,
+of which 108 are self-mirror; NSLOTS/rules bound 9,447,840;
+per-depth ROTATION-class counts 1/2/4/24/144/854/4,943/26,272/102,155/121,404/6,852/19
+(the census's per-depth counts are the 24-fold ones shown on the Browse tab).

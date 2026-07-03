@@ -8,8 +8,9 @@
  *   firebase emulators:exec --only firestore "node test/firestore.rules.test.mjs"
  *
  * It mirrors the real client write paths (js/oo.js) and the tightened rules:
- * a moderator-only, whitelisted 11-field create, and moderator updates restricted
- * to the review fields (status, reviewedBy) while admins may edit more broadly.
+ * a moderator-only, whitelisted 12-field create (incl. the wca/ns `notation`
+ * tag), and moderator updates restricted to the review fields (status,
+ * reviewedBy) while admins may edit more broadly.
  */
 import {
   initializeTestEnvironment,
@@ -52,7 +53,7 @@ function validSolution(uid, overrides = {}) {
   return {
     uid, status: 'pending', createdAt: serverTimestamp(),
     pairId: 100, classId: 100, partnerId: 200,
-    scramble: "R U' L", solution: 'R L U B L', moves: 5,
+    scramble: "R U' L", solution: 'R L U B L', notation: 'wca', moves: 5,
     name: 'Tester', showName: true,
     ...overrides,
   };
@@ -98,7 +99,15 @@ await test('solutions: non-bool showName denied', () =>
 await test('solutions: moves out of range denied', () =>
   assertFails(addDoc(collection(authed('a'), 'solutions'), validSolution('a', { moves: 16 }))));
 await test('solutions: classId out of range denied', () =>
-  assertFails(addDoc(collection(authed('a'), 'solutions'), validSolution('a', { classId: 3732480 }))));
+  assertFails(addDoc(collection(authed('a'), 'solutions'), validSolution('a', { classId: 9447840 }))));
+await test('solutions: ns notation allowed', () =>
+  assertSucceeds(addDoc(collection(authed('a'), 'solutions'), validSolution('a', { notation: 'ns' }))));
+await test('solutions: unknown notation denied', () =>
+  assertFails(addDoc(collection(authed('a'), 'solutions'), validSolution('a', { notation: 'fcn' }))));
+await test('solutions: missing notation denied', () => {
+  const d = validSolution('a'); delete d.notation;
+  return assertFails(addDoc(collection(authed('a'), 'solutions'), d));
+});
 
 // ---------------- solutions: update ----------------
 async function seedPending(id) {

@@ -32,6 +32,23 @@ corners; written `B` (and `x/y/z` rotations) are handled by `applyParsed`'s fram
 exactly like Pyraminx wide moves. 1 written move = 1 native move, so the depth metric is
 unchanged.
 
+Two frame rules the identity forces (both caught 2026-07-03 against the fixed-frame vectors;
+the solvedness-level bridge test CANNOT catch them — only exact facelet comparison can):
+
+1. **Frame direction:** the parsing frame resolves written letters through the INVERSE of the
+   accumulated leftover rotation, so each written free-corner quarter turn advances the frame
+   by **+amt powers of the native-direction 120° rotation** (`steps = amt % 3`, not `2·amt`).
+   With the direction inverted, every move written AFTER a `B` acts on the wrong corner —
+   states stay self-consistent in-engine but disagree with a physically executed scramble.
+2. **Display frame:** the pinned model absorbs each `B`'s rotation, so raw `toFacelets` can
+   show the UFL corner twisted — impossible on a real cube (no WCA move touches the
+   white/red/green corner's half). All rendering goes through **`toFixedFacelets`**: rotate by
+   `240° × fx[UFL]` about the UFL–DBR diagonal so UFL reads solved. For every rotation-free
+   WCA alg, `toFixedFacelets(applyParsed(A))` equals the literal fixed-frame facelet result of
+   `A` (the pristine-UFL representative of a position is unique, so matching UFL forces exact
+   equality) — diagrams therefore match a real cube after the printed scramble, token for
+   token against the TNoodle vectors and the KPW 2015 scramble.
+
 ## Native move tables (CW; `a→b` = piece at slot a moves to slot b)
 
 | Native axis | corner 3-cycle (free tetrad) | center 3-cycle (faces) |
@@ -93,7 +110,10 @@ as the Pyraminx engine.
 
 Computed class counts (from the verification BFS; use as oracles): canon over 12 proper
 rotations → **262,674** classes; over all 24 → **131,391**; the 90 depth-11 antipodes form 12
-classes under the 24-group.
+classes under the 24-group. **The OO census canonicalizes over the full 24-element group**
+(`makeFullCanon`, IndexedDB key `oo-classes-v2`) — a position and its mirror are one census
+class, so the site counts 131,391 positions; 2·131,391 − 262,674 = **108** classes are
+self-mirror. The sheet/trainer case keying (`realCanonKey`, y²-fold) is unaffected.
 
 ## Test vectors
 
@@ -141,6 +161,31 @@ exactly 15 facelets.
 
 Rotations `x y z` are 90° whole-cube rotations (order 4); cubing.js maps x→Rv, y→Uv, z→Fv.
 No wide moves exist (opposite-corner move ≡ inverse move + rotation). Community algs freely
-mix rotations into solutions. Local reference copies of the TNoodle sources and the two
+mix rotations into solutions.
+
+### NS ("Rubik'skewb") notation
+
+The system the Sarah's-method / NS 2.0 alg sheets use. Primary source:
+`rubikskewb.web.fc2.com/skewb/notation.html` (Japanese; both Ranzha's notation page and the
+NS 2.0 speedsolving thread point to it). All EIGHT corners get letters: **uppercase F R B L =
+the four top corners, lowercase f r b l = the four bottom corners**, named front/right/back/
+left as held. Plain = 120° CW seen from outside that corner, `'` = CCW; `x y z` as in WCA.
+Anchored to the WCA scrambling hold (white top, green left, red right — UFL corner toward
+you), the engine binding (`NS_CORNER`, machine-verified in tools/test-engine.mjs) is:
+
+| NS | corner | | NS | corner |
+|---|---|---|---|---|
+| F | UFL (axis; = native F) | | f | DFL (free) |
+| R | UFR (free) | | r | DFR (axis; = WCA R) |
+| B | UBR (axis; = WCA U) | | b | DBR (free; = WCA B) |
+| L | UBL (free) | | l | DBL (axis; = WCA L) |
+
+**WCA → NS is a pure token rename** (R→r, U→B, L→l, B→b; primes/rotations unchanged) — every
+WCA letter's corner keeps its letter geometry under interleaved rotations. NS F f R L have no
+WCA letter (free-corner/UFL twists; verified: NS `R` = WCA `x2 B x2`, `f` = `y2 B y2`, `L` =
+`z2 B z2`, `F` = the native UFL half-twist). NS → WCA therefore converts through the native
+stream (`parsedToNative` + `nativeToWCA`): same state, same movecount, input rotations
+absorbed. The x+z=0 mirror uses ONE letter map for both systems: U→U′, B→B′, F→F′, f→f′,
+b→b′, R↔L and r↔l with prime flips. Local reference copies of the TNoodle sources and the two
 verification scripts live outside the repo (GPL; do not commit): see the session scratchpad
 (`SkewbSolver.java`, `SkewbPuzzle.java`, `skewb-vectors.mjs`, `skewb-verify.mjs`).
