@@ -337,6 +337,32 @@ function liveDB() {
       try { await F.deleteDoc(F.doc(fs, 'moderatorInvites', key)); } catch {}
       notify();
     },
+    // Admin repair: rebuild meta/doneMap + meta/stats from the approved
+    // solutions themselves. The solution docs are the source of truth (classId
+    // is an absolute state index, independent of the class enumeration); the
+    // meta docs are a derived cache that an admin delete of an approved
+    // solution — the documented recovery for the racy approval cap — or a
+    // class-table change would otherwise leave stale. Full scan of approved
+    // docs, client-side: fine at census scale (≤ 2 per position).
+    async recompute() {
+      const q = F.query(F.collection(fs, 'solutions'), F.where('status', '==', 'approved'));
+      const bm = new Uint8Array(Math.ceil(T.reps.length / 8));
+      let skipped = 0;
+      (await F.getDocs(q)).forEach(d => {
+        const cid = d.data().classId;
+        if (!validId(cid)) { skipped++; return; }
+        const o = ordinalOf(canonOf(E.unidx(cid))); // same keying as the approval tx
+        if (o >= 0) setBit(bm, o); else skipped++;
+      });
+      let done = 0;
+      for (let i = 0; i < bm.length; i++) { let x = bm[i]; while (x) { done += x & 1; x >>= 1; } }
+      let b64 = ''; const CH = 8192;
+      for (let i = 0; i < bm.length; i += CH) b64 += String.fromCharCode.apply(null, bm.subarray(i, i + CH));
+      await F.setDoc(F.doc(fs, 'meta', 'doneMap'), { b64: btoa(b64) });
+      await F.setDoc(F.doc(fs, 'meta', 'stats'), { done, total: T.reps.length });
+      notify();
+      return { done, skipped };
+    },
   };
 }
 
@@ -728,15 +754,18 @@ async function pageMod(main) {
     }
     const pr = pairOf(s.classId);
     // re-verify in the notation the solution was SUBMITTED in — "R' L R L'"
-    // parses in both notations but means different corners in each.
+    // parses in both notations but means different corners in each. Display
+    // follows the WCA/NS switch like everywhere else (the scramble is stored
+    // as engine WCA, the solution in its own `notation`); verification always
+    // runs on the stored text.
     const v = verifySolution(s.solution, pr, s.notation === 'ns' ? 'ns' : 'wca');
     const row = h('section', { class: 'card modrow' },
       h('div', { class: 'modleft', html: R.netSVG(E.unidx(s.classId), 160, { cls: 'oonet thumb', thumb: true }) }),
       h('div', { class: 'modbody' },
-        h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'scramble'), h('code', { class: 'mono scr' }, s.scramble)),
-        h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'solution'), h('code', { class: 'mono sol' }, s.solution)),
+        h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'scramble'), h('code', { class: 'mono scr' }, dispAlg(s.scramble))),
+        h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'solution'), h('code', { class: 'mono sol' }, dispSol(s))),
         h('div', { class: 'verifyline ' + (v.ok ? 'good' : 'bad') },
-          v.ok ? '\u2713 verified \u00b7 ' + s.moves + ' moves' + (s.notation === 'ns' ? ' \u00b7 NS notation' : '') + ' \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
+          v.ok ? '\u2713 verified \u00b7 ' + s.moves + ' moves' + (s.notation === 'ns' ? ' \u00b7 typed in NS' : '') + ' \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
                : '\u2717 fails verification now: ' + v.error)),
       h('div', { class: 'modacts' },
         h('button', { class: 'primary', disabled: v.ok ? null : '', onclick: async ev => {
@@ -771,6 +800,21 @@ async function pageMod(main) {
       } }, 'Add moderator'));
     mc.append(tbl, inv);
     main.appendChild(mc);
+    // data repair — live mode only (demo derives its done map on the fly)
+    if (DB.recompute) {
+      const rbtn = h('button', { class: 'ghost', onclick: async ev => {
+        ev.target.setAttribute('disabled', '');
+        try {
+          const r = await DB.recompute();
+          toast('Rebuilt: ' + fmt(r.done) + ' positions solved' + (r.skipped ? ' (' + r.skipped + ' broken doc(s) ignored)' : '') + '.');
+        } catch { toast('Something went wrong recomputing. Please try again.'); }
+        ev.target.removeAttribute('disabled'); render();
+      } }, 'Recompute solved bitmap');
+      main.appendChild(h('section', { class: 'card' },
+        h('h3', null, 'Data repair'),
+        h('p', null, 'Rebuilds the solved bitmap and the solved counter from the approved solutions. Run this after deleting an approved solution (e.g. in the Firebase console) — deletes don’t clear the solved mark on their own.'),
+        rbtn));
+    }
   }
 }
 
@@ -799,7 +843,7 @@ function pageAbout(main) {
     h('p', null, 'Signed in as ' + (DB.user.email || DB.user.name) + '.'),
     h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'user id'),
       h('code', { class: 'mono scr' }, DB.user.uid), copyBtn(DB.user.uid)),
-    h('p', null, 'If you run this site, paste this id into the Firestore security rules to become the admin (see SETUP.md).')));
+    h('p', null, 'If you run this site, create an admins/{this id} document in Firestore to become the admin (see SETUP.md).')));
   function nrow(a, b, c) {
     return h('div', { class: 'nrow' }, h('code', { class: 'mono' }, a), h('b', null, b), h('span', null, c));
   }

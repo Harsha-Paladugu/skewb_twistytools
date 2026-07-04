@@ -5,30 +5,39 @@ sync of per-user data (trainer progress, solver prefs), and the OO census's
 shared solutions/moderation. Without it, everything falls back to localStorage
 ("demo mode").
 
-## 1. Firebase config
+## Current state (M4)
 
-Put your Firebase web config in [`js/config.js`](js/config.js):
+The Firebase project **`skewbiks`** exists (Spark plan), its web app's config is
+already in [`js/config.js`](js/config.js), `.firebaserc` pins the project, and
+the security rules are deployed. What remains is console-only (the API can't do
+these on the free plan) — steps 1–3 below.
 
-```js
-window.OO_CONFIG = {
-  firebase: { apiKey: "…", authDomain: "…", projectId: "…", appId: "…" },
-  adminEmails: ["you@example.com"],   // your Google account email
-};
-```
+## 1. Create the Firestore database (console-only on Spark)
 
-The `apiKey` is a public client identifier, not a secret — access is enforced by
-the Firestore security rules below. Leave `firebase: null` to run in demo mode.
+[console.firebase.google.com/project/skewbiks/firestore](https://console.firebase.google.com/project/skewbiks/firestore)
+→ Create database → location **nam5 (United States)** → **production mode**.
 
-## 2. Become the admin
+> The create wizard writes its own ruleset, overwriting the deployed one —
+> redeploy after (step 4).
+
+## 2. Enable Google sign-in
+
+Console → Authentication → Get started → Sign-in method → **Google** → Enable.
+(Authorized domains: `localhost` and `skewbiks.firebaseapp.com` are pre-listed;
+add `skewbiks.com` before launch — M8 checklist.)
+
+## 3. Become the admin
 
 Admin is driven by an `admins/{uid}` collection (the rules trust any uid with a
-doc there). The OO page shows your account's **user id** when you're signed in;
-create a document `admins/{your-uid}` (any contents) in the Firebase console —
-console writes bypass the rules, which is how you bootstrap the first admin.
-After that, existing admins can grant/revoke others. `adminEmails` in `config.js`
-only gates the admin UI client-side; the rules are what actually enforce writes.
+doc there). Sign in on the OO page; the **About** tab shows your account's
+**user id**. Create a document `admins/{your-uid}` (any contents) in the
+Firebase console — console (and Firebase MCP) writes bypass the rules, which is
+how you bootstrap the first admin. After that, existing admins can grant/revoke
+others. `adminEmails` in `config.js` only gates the admin UI client-side; the
+rules are what actually enforce writes. (uids are per-project — a uid from
+another Firebase project does not carry over.)
 
-## 3. Firestore security rules
+## 4. Firestore security rules
 
 The rules are version-controlled in [`firestore.rules`](firestore.rules) (wired up
 by [`firebase.json`](firebase.json)) — they are the real authorization boundary
@@ -38,11 +47,19 @@ by [`firebase.json`](firebase.json)) — they are the real authorization boundar
 firebase deploy --only firestore:rules
 ```
 
-You can also paste the file's contents into the Firebase console (Firestore →
-Rules) if you'd rather not use the CLI. Admin access comes from the `admins/{uid}`
-collection (step 2) — no per-deploy uid edit needed — so deploy only once your
-own `admins/{uid}` doc exists, or admin writes lock out until you create it.
+(or the Firebase MCP's deploy tool). Rules tests: see the header of
+[`test/firestore.rules.test.mjs`](test/firestore.rules.test.mjs) — deps are
+installed `--no-save`, and the emulator needs `firebase-tools@13` on a Java 17
+machine (14+ wants Java 21).
 
-> Note: the algorithm sheet no longer uses Firestore. Editing happens in
-> `data/pyraminx_algs.json` (directly or via the Algorithms page's Export), so
-> there is no `algsheet` collection or rule — see [README.md](README.md).
+## Notes
+
+- The `apiKey` in `config.js` is a public client identifier, not a secret —
+  access is enforced by the rules. Set `firebase: null` to fall back to demo mode.
+- Deleting an approved solution (admin-only, e.g. in the console) leaves the
+  derived `meta/doneMap` + `meta/stats` stale — run the Moderation tab's
+  **Recompute solved bitmap** afterwards. Formats are frozen in
+  [`docs/skewb-ground-truth.md`](docs/skewb-ground-truth.md) §"OO census
+  persistence formats".
+- The algorithm sheet does not use Firestore. Editing happens in the algs JSON
+  (directly or via the Algorithms page's Export) — see [README.md](README.md).

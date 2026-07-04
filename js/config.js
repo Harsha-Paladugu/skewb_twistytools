@@ -4,7 +4,14 @@
    browser). The apiKey here is a public client identifier, not a secret —
    access is controlled by the Firestore security rules. */
 window.OO_CONFIG = {
-  firebase: null,   // demo mode until the Skewbiks Firebase project exists (see SETUP.md)
+  firebase: {
+    apiKey: "AIzaSyBmOQGH9toKetXn4qmy1Gtire52mhOPmh8",
+    authDomain: "skewbiks.firebaseapp.com",
+    projectId: "skewbiks",
+    storageBucket: "skewbiks.firebasestorage.app",
+    messagingSenderId: "276959790417",
+    appId: "1:276959790417:web:c902eb3b39c60d81a4bf70"
+  },
 
   adminEmails: ["harsha.paladugu2@gmail.com"],   // your Google account email
 

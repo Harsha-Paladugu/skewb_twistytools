@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Pyraminx.net — Firestore security rules (the REAL authorization boundary).
+// Skewbiks.com — Firestore security rules (the REAL authorization boundary).
 //
 // These are versioned here so they can be reviewed, diffed, and deployed from
 // source instead of pasted into the console. Deploy with:
@@ -81,6 +81,12 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy'])
             && request.resource.data.status in ['approved', 'rejected']
             && request.resource.data.reviewedBy is string);
+      // Delete stays admin-only ON PURPOSE: it is the documented recovery for
+      // the racy approval cap (js/oo.js review()). Deleting an approved
+      // solution leaves the derived meta/doneMap + meta/stats stale — the
+      // Moderation tab's admin "Recompute solved bitmap" action rebuilds both
+      // from the surviving approved docs (solution docs are the source of
+      // truth; the meta docs are a cache).
       allow delete: if isAdmin();
     }
 

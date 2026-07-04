@@ -59,14 +59,26 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     `NS_CORNER`, render `STICKERS`); `render.js` now uses the same shadowed-module
     IIFE as engine.js/tables.js (the old `typeof module` branch silently skipped
     `window.OORender` under the documented Node window-stub recipe).
-- [ ] **M4 — Firebase.** Create project + web app + Firestore (Firebase MCP can do this);
-  creds into `js/config.js`; ~~rules bound `3732480 → 9447840`~~ (DONE 2026-07-03, plus the
-  `notation` field + fixtures — still needs the emulator run + deploy);
-  keep `moves <= 15`; deploy rules.
-  USER steps: enable the Google sign-in provider (console-only), sign in on oo.html, read
-  uid from the About tab (uids are project-scoped — the pyraminx uid does not carry), then
-  create `admins/{uid}` (MCP write bypasses rules, same as console). Gate: `npm run
-  test:rules`; live submit → moderate → done-bitmap round-trip.
+- [~] **M4 — Firebase** (2026-07-03, agent side done — USER console steps remain).
+  Project **`skewbiks`** + web app created via MCP; creds in `js/config.js` (demo mode
+  off); `.firebaserc` pins the project; rules deployed (verified byte-identical via
+  `firebase_get_security_rules`). Rules tests: 25/25 green against the emulator
+  (`npm i --no-save @firebase/rules-unit-testing firebase`, then
+  `npx -y firebase-tools@13 emulators:exec --only firestore "node test/firestore.rules.test.mjs"`
+  — firebase-tools 14+ needs Java 21, machine has 17; recipe in the test header), incl.
+  2 new delete tests. Review carry-items landed: (a) solutions delete stays admin-only
+  (it's the cap-race recovery path) + new admin **Recompute solved bitmap** action
+  (`liveDB.recompute()`: rebuilds meta/doneMap + meta/stats from approved docs' classId
+  — state indexes, enumeration-independent — so it doubles as the KEY_CLASSES migration
+  tool); (b) persistence formats FROZEN in skewb-ground-truth.md §"OO census persistence
+  formats"; (c) pageMod scramble/solution now display through the WCA/NS switch
+  (verification still runs on stored text + notation).
+  **Firestore DB creation is console-only on Spark** (API/CLI CreateDatabase requires
+  billing — confirmed against Firebase docs), so USER steps (see SETUP.md §1–3): create
+  the (default) DB (nam5, production mode — the wizard OVERWRITES deployed rules:
+  redeploy after), enable the Google provider, sign in on oo.html, read uid from About,
+  create `admins/{uid}` (console/MCP write bypasses rules). Remaining gate: live
+  submit → moderate → done-bitmap round-trip once the DB exists.
 - [ ] **M5 — Sheet pipeline + Algorithms page + alg data v0.** USER authors
   `data/skewb_algs.json` (same schema; subsets proposal: Sarah-Intermediate/Sarah-Advanced/
   NS/FL — user confirms; `direction` = Front/Right/Back/Left y-presentations; `setup` =
@@ -100,7 +112,7 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
   final, pre-announce checklist (deployed-rules diff, Firebase authorized domains incl.
   skewbiks.com, OG cards).
 
-## Remaining plan + review carry-items (2026-07-03 — read before starting M4)
+## Remaining plan + review carry-items (2026-07-03 — read before starting M5)
 
 Standing goals for the rest of the port: (1) main is always committed and green at
 its own milestone's bar; (2) each milestone deletes its own Pyraminx leftovers
@@ -110,17 +122,8 @@ data (done-bitmap, solution docs) are frozen and documented before M4 goes live;
 
 Items the 2026-07-03 OO code review adds to the milestones above:
 
-- **M4 (next):** as specced, PLUS —
-  (a) decide the delete-approved-solution story: rules allow `delete: if isAdmin()`
-  on solutions but nothing clears the done-bit or decrements `meta/stats.done`, so
-  deleting the only approved solution leaves a position marked solved with no
-  visible solutions. Either forbid deletes or add an admin recompute action.
-  (b) FREEZE the done-bitmap format: ordinals index into the `oo-classes-v2` reps
-  array; any future change to class enumeration reorders ordinals and silently
-  corrupts the Firestore doneMap. If the class key ever changes, bump `KEY_CLASSES`
-  AND migrate the stored bitmap together.
-  (c) optional: pageMod shows stored scramble/solution verbatim — consider
-  converting through the active WCA/NS switch for display consistency.
+- **M4:** carry-items (a)/(b)/(c) all landed (see the M4 status entry above);
+  what remains is the USER console steps + the live round-trip gate.
 - **M5:** as specced. Also kills the known-dead algs.js destructuring of dropped
   contract members (`applyMoveK`/`openOfEkey`/`barOfEkey`) and turns
   `npm run build`/`check:fresh` green — after M5, run `check:fresh` before every

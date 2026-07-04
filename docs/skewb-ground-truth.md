@@ -189,3 +189,32 @@ absorbed. The x+z=0 mirror uses ONE letter map for both systems: U→U′, B→B
 b→b′, R↔L and r↔l with prime flips. Local reference copies of the TNoodle sources and the two
 verification scripts live outside the repo (GPL; do not commit): see the session scratchpad
 (`SkewbSolver.java`, `SkewbPuzzle.java`, `skewb-vectors.mjs`, `skewb-verify.mjs`).
+
+## OO census persistence formats (FROZEN 2026-07-03, M4)
+
+These formats hold live user data in Firestore. Changing any of them after launch
+requires an explicit migration; nothing may change silently.
+
+**`solutions/{id}`** (auto-id) — the SOURCE OF TRUTH for everything derived:
+`uid`, `status` (`pending|approved|rejected`), `createdAt` (server timestamp),
+`pairId`/`classId`/`partnerId` (ints in `[0, 9447840)` = engine state indexes,
+`E.idx` over NSLOTS 360×12×2187 — enumeration-independent, NOT class ordinals;
+`pairId` = full-24-sym canonical id = `classId` of the rep side), `scramble`
+(engine WCA string), `solution` (text as typed), `notation` (`'wca'|'ns'` — the
+system `solution` is written in; `scramble` is always WCA), `moves` (int 1–15),
+`name`, `showName`, and after review `reviewedBy` (email). Field set enforced by
+`firestore.rules` `hasOnly`.
+
+**`meta/doneMap`** — `{ b64 }`: base64 of a `Uint8Array(⌈131391/8⌉)`; bit `o`
+(byte `o>>3`, mask `1<<(o&7)`) = "class ordinal `o` has an approved solution".
+**Ordinals index the sorted `oo-classes-v2` reps array** (ascending state-index
+order, 131,391 entries — js/tables.js `KEY_CLASSES`). The bitmap is therefore
+coupled to the class enumeration: if the class key/enumeration ever changes,
+bump `KEY_CLASSES` AND rebuild the bitmap in the same release — the Moderation
+tab's admin "Recompute solved bitmap" rebuilds it from the solution docs'
+`classId` (state indexes survive any re-enumeration).
+
+**`meta/stats`** — `{ done, total }`: `done` = popcount of doneMap (distinct
+solved classes; depth-0 is *not* in the bitmap — the UI counts it as solved by
+definition), `total` = 131,391. Both meta docs are derived caches; the admin
+recompute action regenerates them from the approved solutions at any time.

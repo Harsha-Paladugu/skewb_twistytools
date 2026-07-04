@@ -1,11 +1,12 @@
-/* Pyraminx.net — Firestore security-rules tests (OPT-IN, dev-only).
+/* Skewbiks.com — Firestore security-rules tests (OPT-IN, dev-only).
  *
  * Exercises firestore.rules against the Firestore emulator. NOT part of the
- * default `npm test` (CI may not have the emulator). Requires two dev deps and
- * the emulator:
+ * default `npm test` (CI may not have the emulator). Requires two dev deps
+ * (install --no-save to keep package.json clean for upstream cherry-picks) and
+ * the emulator (firebase-tools >= 14 needs Java 21; pin @13 for Java 17):
  *
- *   npm i -D @firebase/rules-unit-testing firebase
- *   firebase emulators:exec --only firestore "node test/firestore.rules.test.mjs"
+ *   npm i --no-save @firebase/rules-unit-testing firebase
+ *   npx -y firebase-tools@13 emulators:exec --only firestore "node test/firestore.rules.test.mjs"
  *
  * It mirrors the real client write paths (js/oo.js) and the tightened rules:
  * a moderator-only, whitelisted 12-field create (incl. the wca/ns `notation`
@@ -18,7 +19,7 @@ import {
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
 import {
-  doc, setDoc, getDoc, updateDoc, addDoc, collection, serverTimestamp,
+  doc, setDoc, getDoc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp,
 } from 'firebase/firestore';
 import fs from 'fs';
 import path from 'path';
@@ -27,7 +28,7 @@ import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const testEnv = await initializeTestEnvironment({
-  projectId: 'pyraminx-rules-test',
+  projectId: 'skewbiks-rules-test',
   firestore: { rules: fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8') },
 });
 
@@ -133,6 +134,17 @@ await test('solutions: moderator content edit denied', async () => {
 await test('solutions: admin broad edit allowed', async () => {
   await seedPending('s4'); await makeAdmin('admin1');
   await assertSucceeds(updateDoc(doc(authed('admin1'), 'solutions', 's4'), { solution: 'fixed' }));
+});
+
+// ---------------- solutions: delete (admin-only — the cap-race recovery path;
+// the admin recompute action repairs the derived meta docs afterwards) --------
+await test('solutions: moderator delete denied', async () => {
+  await seedPending('s5'); await makeMod('mod4', 'mod4@example.com');
+  await assertFails(deleteDoc(doc(authed('mod4', 'mod4@example.com'), 'solutions', 's5')));
+});
+await test('solutions: admin delete allowed', async () => {
+  await seedPending('s6'); await makeAdmin('admin2');
+  await assertSucceeds(deleteDoc(doc(authed('admin2'), 'solutions', 's6')));
 });
 
 // ---------------- admins / meta ----------------
