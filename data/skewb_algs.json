@@ -1,0 +1,693 @@
+{
+  "meta": {
+    "source": "Skewbiks.com — machine-generated v0 seed (engine-optimal algorithms; case names are descriptive placeholders pending authoring)",
+    "description": "Skewb algorithms grouped by subset, then by case name; each alg is tagged with the y-presentation (direction) it solves from. Authored notation is WCA.",
+    "notation": "wca",
+    "direction_sort_order": [
+      "Front",
+      "Right",
+      "Back",
+      "Left"
+    ],
+    "apostrophe": "normalized to ASCII '",
+    "setup_moves": "leading bracketed tokens e.g. [y2] are kept inline and also exposed as 'setup'",
+    "status": "v0 seed — FL / Sarah-Advanced / NS subsets await authoring (docs/port-plan.md M5)",
+    "counts": {
+      "cases": 18,
+      "algs": 135
+    }
+  },
+  "subsets": {
+    "FL": {
+      "name": "First Layer",
+      "directional": true,
+      "cases": []
+    },
+    "Sarah-Intermediate": {
+      "name": "Sarah's Method — Intermediate",
+      "directional": true,
+      "cases": [
+        {
+          "name": "Two corners twisted",
+          "section": "Last layer corners (centers solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "U' B' R L R B U B' L' B'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B L B' R' B' R' B' L U L"
+            },
+            {
+              "direction": "Front",
+              "alg": "[y2] U' B' R' L' R' B U B U B",
+              "setup": "y2"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' L R' U' R U L' B L B'"
+            },
+            {
+              "direction": "Right",
+              "alg": "B U B' R' L B' R' B U L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "U R B' R' L B' U' L B L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B U' R' L B' U' R L B' R"
+            },
+            {
+              "direction": "Left",
+              "alg": "B R' U B L' B' R L' B' U"
+            },
+            {
+              "direction": "Left",
+              "alg": "U' R' U R L' U B L' B' L"
+            }
+          ]
+        },
+        {
+          "name": "Four corners twisted",
+          "section": "Last layer corners (centers solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B' L R L' B' U L U'"
+            },
+            {
+              "direction": "Front",
+              "alg": "R' B' U R L R U' B'"
+            },
+            {
+              "direction": "Right",
+              "alg": "R' B U L' U' B L R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' L' B U B U R' L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "U' L B R' L' R B U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "U L' R L' B' U L' U"
+            },
+            {
+              "direction": "Left",
+              "alg": "U' R L' R B U' R U'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U R' B' L R L' B' U"
+            }
+          ]
+        },
+        {
+          "name": "Centers 3-cycle F→B→L",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "R U B' U' B L R' U'"
+            },
+            {
+              "direction": "Front",
+              "alg": "R B' L' U R U' R' B"
+            },
+            {
+              "direction": "Right",
+              "alg": "U B' U' B L R' U' R"
+            },
+            {
+              "direction": "Right",
+              "alg": "B' L' U R U' R' B R"
+            },
+            {
+              "direction": "Back",
+              "alg": "L U' L' R B U' B' U"
+            },
+            {
+              "direction": "Back",
+              "alg": "R' B' L B L' U' L U"
+            },
+            {
+              "direction": "Left",
+              "alg": "U' L' R B U' B' U L"
+            },
+            {
+              "direction": "Left",
+              "alg": "B R B' L' U R U' R'"
+            }
+          ]
+        },
+        {
+          "name": "Centers 3-cycle F→L→B",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "U R L' B' U B U' R'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B' L' B R U' L' U L"
+            },
+            {
+              "direction": "Right",
+              "alg": "R' B' R U R' U' L B"
+            },
+            {
+              "direction": "Right",
+              "alg": "L B R' B' R U R' U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B R U' L' U L B' L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B U' B' U L U' L' R"
+            },
+            {
+              "direction": "Left",
+              "alg": "R L' B' U B U' R' U"
+            },
+            {
+              "direction": "Left",
+              "alg": "L' U' B U B' R' L U"
+            }
+          ]
+        },
+        {
+          "name": "Centers 3-cycle U→B→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "R' L' R' U B L' B' L R'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B' U L' R' L R B' R' B'"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' L U' L' R B U' B' U'"
+            },
+            {
+              "direction": "Right",
+              "alg": "R' B' R' B U L' R' L R'"
+            },
+            {
+              "direction": "Back",
+              "alg": "U' R L' B' U B U' R' U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "R' U' R' B R B' L' U R'"
+            },
+            {
+              "direction": "Left",
+              "alg": "L' U' B' R B R' L' R L'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U' R U' R' B R B' L' U'"
+            }
+          ]
+        },
+        {
+          "name": "Centers 3-cycle U→F→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B R' B U L' R' L R B"
+            },
+            {
+              "direction": "Front",
+              "alg": "R U B L' B' L R L' R"
+            },
+            {
+              "direction": "Right",
+              "alg": "R L R B' R' B U L' R"
+            },
+            {
+              "direction": "Right",
+              "alg": "R U' L B R' B' R U R"
+            },
+            {
+              "direction": "Back",
+              "alg": "B U' B L R' U' R U B"
+            },
+            {
+              "direction": "Back",
+              "alg": "U R' U R L' B' U B U"
+            },
+            {
+              "direction": "Left",
+              "alg": "R L' B L B' U' R L R"
+            },
+            {
+              "direction": "Left",
+              "alg": "L R L U' B' R B R' L"
+            }
+          ]
+        },
+        {
+          "name": "Centers 3-cycle U→L→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "U' R' U R L' B' U B"
+            },
+            {
+              "direction": "Front",
+              "alg": "U' L B R' B' R U R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "L' R' U B L' B' L R"
+            },
+            {
+              "direction": "Right",
+              "alg": "L' U L B' L' B R U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B' L R L' R' U B L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "R L U' B' R B R' L'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U L U' L' R B U' B'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U R' B' L B L' U' L"
+            }
+          ]
+        },
+        {
+          "name": "Centers swap R↔F, L↔B",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B' U' R' B' U' R L U B'"
+            },
+            {
+              "direction": "Front",
+              "alg": "L' B U L' R' U' B' U L'"
+            },
+            {
+              "direction": "Right",
+              "alg": "L R L R U R' U' R' L"
+            },
+            {
+              "direction": "Right",
+              "alg": "B U' L' R B R L U' B"
+            }
+          ]
+        },
+        {
+          "name": "Centers swap R↔L, F↔B",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "R' L U' L R U' L U'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B U' B U' L' B R' L"
+            }
+          ]
+        },
+        {
+          "name": "Centers swap U↔R, F↔B",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B' L R B L R' U' L'"
+            },
+            {
+              "direction": "Front",
+              "alg": "U' B' R' U' R U R B"
+            },
+            {
+              "direction": "Right",
+              "alg": "B' L' B' R' B U B R"
+            },
+            {
+              "direction": "Right",
+              "alg": "L' B' L' U R B R U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "R B R U' L' B' L' U"
+            },
+            {
+              "direction": "Back",
+              "alg": "L U B U L' R' B' R'"
+            },
+            {
+              "direction": "Left",
+              "alg": "B L U L U' L' B' U'"
+            },
+            {
+              "direction": "Left",
+              "alg": "R' U' L' B' L R B L"
+            }
+          ]
+        },
+        {
+          "name": "Centers swap U↔R, F↔L",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "R L B' U L' B' R B'"
+            },
+            {
+              "direction": "Front",
+              "alg": "L' R B L R B' R' U'"
+            },
+            {
+              "direction": "Right",
+              "alg": "B' R' B U B R B' L'"
+            },
+            {
+              "direction": "Right",
+              "alg": "R U' L R U' R L' U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "L R U' R L' U' R U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B R U' L' B' L' U R"
+            },
+            {
+              "direction": "Left",
+              "alg": "L B' L U B' R U' B'"
+            },
+            {
+              "direction": "Left",
+              "alg": "B U R' B U' L' B L'"
+            }
+          ]
+        },
+        {
+          "name": "Centers swap U↔R, L↔B",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "L' U' L U B L B' U'"
+            },
+            {
+              "direction": "Front",
+              "alg": "R' B R' U' B L' U B"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' L U' R' L U' L R"
+            },
+            {
+              "direction": "Right",
+              "alg": "R' L' U L' R U L' U"
+            },
+            {
+              "direction": "Back",
+              "alg": "L B L' U' B' L' U R"
+            },
+            {
+              "direction": "Back",
+              "alg": "B' L U B' R U' B' L"
+            },
+            {
+              "direction": "Left",
+              "alg": "R' B L U' B L' R' B"
+            },
+            {
+              "direction": "Left",
+              "alg": "R L' B' R' L' B L U"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→B→F→L→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "U L' U L U B' U B' R' B'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B' L' B' U B' U R U R' U"
+            },
+            {
+              "direction": "Right",
+              "alg": "L R' U B U R' U B' U' R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "B R' B L R B' R B' U' R'"
+            },
+            {
+              "direction": "Back",
+              "alg": "R U' L R L R' L U' R' U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B U' B L B U' R U' R' U'"
+            },
+            {
+              "direction": "Left",
+              "alg": "R L' B L R U' R L' B' L'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U R' U L B L' U L' B' L'"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→B→L→F→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B R' L' B' R B' R U B R'"
+            },
+            {
+              "direction": "Front",
+              "alg": "L' B U L B' L B' R' L' B"
+            },
+            {
+              "direction": "Right",
+              "alg": "L' B' R L U' R B L' R' U"
+            },
+            {
+              "direction": "Right",
+              "alg": "R U' R' U' B U' B L B U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "R L' R' B L U' R U L' B'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B' R' U L U' R B L' R' L"
+            },
+            {
+              "direction": "Left",
+              "alg": "R' U' B R U' B R L' U' B"
+            },
+            {
+              "direction": "Left",
+              "alg": "U L' R' B L U' R L B' R'"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→F→B→L→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "L' R B' R' L' U L' R B R"
+            },
+            {
+              "direction": "Front",
+              "alg": "R U B U' R U' B' U' R L'"
+            },
+            {
+              "direction": "Right",
+              "alg": "B' U B' R' B' U L' U L U"
+            },
+            {
+              "direction": "Right",
+              "alg": "U R U R' U B' L' B' U B'"
+            },
+            {
+              "direction": "Back",
+              "alg": "L B L U' L B' L' U' R U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "L B L R' U R' L' B' L R'"
+            },
+            {
+              "direction": "Left",
+              "alg": "B R B U' B U' L' U' L U'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U' R U' R' U' B U' B L B"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→F→L→B→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "R' B U B R' L R' L' R' B"
+            },
+            {
+              "direction": "Front",
+              "alg": "U B' L' B' U B' U R U R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "B L U' R' U L' B' R L R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "L U' R' B' R U' R B R U'"
+            },
+            {
+              "direction": "Back",
+              "alg": "B L' R' L' R L' B U B L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "L' U L U B' U B' R' B' U"
+            },
+            {
+              "direction": "Left",
+              "alg": "B' L R B L' B L' U' B' L"
+            },
+            {
+              "direction": "Left",
+              "alg": "R' L R U' B' L U' L' B U"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→L→B→F→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B U' L' B U' R' L B U' L"
+            },
+            {
+              "direction": "Front",
+              "alg": "U' B U' B L B U' R U' R'"
+            },
+            {
+              "direction": "Right",
+              "alg": "L' R B' L U R L' B R' U'"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' L R' B' U R U' B R L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "U L' B' R L' B' R L B' R"
+            },
+            {
+              "direction": "Back",
+              "alg": "B' U B' U R U R' U B' L'"
+            },
+            {
+              "direction": "Left",
+              "alg": "U R B' L R' U' L' B R' L"
+            },
+            {
+              "direction": "Left",
+              "alg": "B L U' R U L' B' R L' R'"
+            }
+          ]
+        },
+        {
+          "name": "Centers 5-cycle U→L→F→B→R",
+          "section": "Last layer centers (corners solved)",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "U' L' R B' L U R L' B R'"
+            },
+            {
+              "direction": "Front",
+              "alg": "B R' U R B' U' L R' L' U"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' R' B L' R' B L R' B L"
+            },
+            {
+              "direction": "Right",
+              "alg": "U' R B L' R B L' R' B L'"
+            },
+            {
+              "direction": "Back",
+              "alg": "L' R' L B' R' U L U' R B"
+            },
+            {
+              "direction": "Back",
+              "alg": "R L' B R' U' L' R B' L U"
+            },
+            {
+              "direction": "Left",
+              "alg": "B' U R B' U L R' B' U R'"
+            },
+            {
+              "direction": "Left",
+              "alg": "B' U' R B' U' L R B' U R"
+            }
+          ]
+        }
+      ]
+    },
+    "Sarah-Advanced": {
+      "name": "Sarah's Method — Advanced",
+      "directional": true,
+      "cases": []
+    },
+    "NS": {
+      "name": "NS Method",
+      "directional": true,
+      "cases": []
+    }
+  },
+  "other_subsets": {}
+}

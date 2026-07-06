@@ -300,6 +300,34 @@ t('prependAUF: folds into a leading y token (mod 4)', () =>
   E.prependAUF(2, "y' L") === 'y L' &&
   E.prependAUF(1, 'R U') === 'y R U' &&
   E.prependAUF(0, "y2 B'") === "y2 B'");
+t('preprocessAlg: rotation-only setup brackets are stripped ([y2] X == y2 X)', () => {
+  for (let i = 0; i < 10; i++) {
+    const a = rndWcaAlg(6);
+    const cs = E.caseStateOf('[y2] ' + a);
+    if (!cs || !E.eq(cs, E.caseStateOf('y2 ' + a))) return false;
+  }
+  return true;
+});
+t('preprocessAlg: non-rotation bracket groups are rejected, not misread', () =>
+  // "[R, U]" is commutator notation (R U R' U'), NOT the sequence R U — it must
+  // fail to parse rather than silently produce the wrong case.
+  E.caseStateOf('[R, U]') === null &&
+  E.caseStateOf("[R U R' U']") === null &&
+  E.caseStateOf('[y2') === null);
+t('nsToWCA: accepts bracketed setups like the WCA path does', () => {
+  const w = E.nsToWCA('[y2] r b');
+  return w !== null && E.eq(E.caseStateOf(w), E.caseStateOf('y2 R B'));
+});
+t('presentations: y2-prefixed algs share a realCanonKey (p/p+2 fold)', () => {
+  // the sheet/algs-page case model: prependAUF(p, A) for p=0..3 gives the four
+  // viewing presentations; p and p+2 differ by the y2 view, the only folded one.
+  for (let i = 0; i < 15; i++) {
+    const a = rndWcaAlg(7);
+    const canons = [0, 1, 2, 3].map(p => E.realCanonKey(E.caseStateOf(E.prependAUF(p, a))));
+    if (canons[0] !== canons[2] || canons[1] !== canons[3]) return false;
+  }
+  return true;
+});
 t('nativeToWCA: converted alg reproduces the native state, same length', () => {
   for (let i = 0; i < 30; i++) {
     const n = 1 + rndInt(12);

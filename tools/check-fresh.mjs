@@ -16,8 +16,8 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Everything a clean build (re)generates: the two compiled artifacts + stamped HTML.
-const GENERATED = ['js/sheet.js', 'js/trainer.js',
+// Everything a clean build (re)generates: the compiled artifacts + stamped HTML.
+const GENERATED = ['js/sheet.js', 'js/trainer.js', 'data/classmap.json',
   ...fs.readdirSync(ROOT).filter(f => f.endsWith('.html'))];
 
 const snapshot = new Map(GENERATED.map(rel => [rel, fs.readFileSync(path.join(ROOT, rel))]));

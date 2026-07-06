@@ -37,18 +37,19 @@ data and bundles the trainer.
 ## Data flow & source of truth
 
 ```
-data/pyraminx_algs.json        ← single source of truth (version-controlled)
+data/skewb_algs.json           ← single source of truth (version-controlled)
         │  npm run build:sheet  (tools/compile-sheet.mjs)
         ▼
-js/sheet.js  (generated: SHEET.ALG / NAME / CNAME / PRES)
-        │  npm run build:trainer  (esbuild bundles sheet.js into the trainer)
+js/sheet.js  (generated: SHEET.ALG / NAME / CNAME / PRES)  +  data/classmap.json (generated)
+        │  npm run build:trainer  (esbuild bundles sheet.js + classmap into the trainer)
         ▼
 js/trainer.js (generated)      → trainer & solver read the compiled sheet
 ```
 
-- **`data/pyraminx_algs.json`** is authored by hand and is the one authority.
-- **`js/sheet.js` and `js/trainer.js` are generated — do not hand-edit them.**
-- The **Algorithms** page reads `pyraminx_algs.json` directly; the trainer and
+- **`data/skewb_algs.json`** is the authored authority (currently a
+  machine-generated v0 seed pending hand authoring).
+- **`js/sheet.js`, `data/classmap.json` and `js/trainer.js` are generated — do not hand-edit them.**
+- The **Algorithms** page reads `skewb_algs.json` directly; the trainer and
   solver read the compiled `js/sheet.js`. Alg display notation is normalized by
   the shared `engine.normAlg` (the same function the compiler uses), so every
   surface shows identical algorithms.
@@ -73,7 +74,7 @@ guards against committing a stale build.
 
 ### Editing the algorithm sheet
 
-Edit `data/pyraminx_algs.json` directly, **or** use the Algorithms page as an
+Edit `data/skewb_algs.json` directly, **or** use the Algorithms page as an
 admin: add/remove algs (each is auto-checked that it actually solves the case),
 then **Export JSON** to download the updated file, commit it, and `npm run build`.
 Admin edits are a per-browser draft until exported — there is no live shared

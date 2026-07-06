@@ -554,9 +554,10 @@ function wcaToNS(alg) {
 }
 // NS -> WCA re-derives through the native stream: same state, same movecount,
 // but input rotations are absorbed (NS F/f/R/L have no WCA letter). Null if
-// the input doesn't parse as NS.
+// the input doesn't parse as NS. Goes through preprocessAlg so bracketed
+// [y2]-style setups are accepted the same way the WCA path accepts them.
 function nsToWCA(alg) {
-  const p = parseAlg(alg, 'ns');
+  const p = parseAlg(preprocessAlg(alg), 'ns');
   return p === null ? null : nativeToWCA(parsedToNative(p).join(' '));
 }
 function convertAlg(alg, from, to) {
@@ -641,6 +642,14 @@ function realCanonKey(st) {
 }
 function preprocessAlg(a) {
   let s = ' ' + String(a).trim() + ' ';
+  // Setup brackets: [y2] etc are real rotation tokens on a Skewb, so strip the
+  // brackets — but ONLY around pure-rotation groups. Anything else bracketed
+  // (e.g. commutator notation "[R, U]") keeps its brackets and is rejected by
+  // the parser, rather than silently misread as a plain move sequence.
+  s = s.replace(/\[([^\[\]]*)\]/g, (m, g) => {
+    const toks = g.trim().split(/\s+/).filter(Boolean);
+    return toks.length && toks.every(t => /^[xyz](2'|2|')?$/.test(t)) ? ' ' + toks.join(' ') + ' ' : m;
+  });
   s = s.replace(/([ULRBFfrbl])2'/g, '$1');      // order-3: X2' == X (WCA + NS letters)
   return s.trim().replace(/\s+/g, ' ');
 }

@@ -85,16 +85,54 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
   create `admins/{uid}` (console/MCP write bypasses rules); ⑤ run the remaining gate:
   live submit → moderate → done-bitmap round-trip (+ try the admin "Recompute solved
   bitmap" button once).
-- [ ] **M5 — Sheet pipeline + Algorithms page + alg data v0.** USER authors
-  `data/skewb_algs.json` (same schema; subsets proposal: Sarah-Intermediate/Sarah-Advanced/
-  NS/FL — user confirms; `direction` = Front/Right/Back/Left y-presentations; `setup` =
-  `[y]`-family). Re-key `tools/compile-sheet.mjs`/`check-sheet.mjs` through engine helpers
-  only (renderKey = `stateKey`, canon = `realCanonKey` y²-fold, `prependAUF` mod-4 string
-  fold); delete the L4E-merge/TL4E-split Pyraminx special cases; `data/prior-sheet.json`
-  starts `{}`, `broken-algs.json` `[]`; GENERATE `data/classmap.json` from subset membership
-  (stop hand-maintaining it). algs.js: keep editor machinery, replace taxonomy (SECTIONS,
-  side labels, `aufAmount`→`yAmount`). Gate: `npm run build` fully green again (check-sheet
-  validates every alg), grep-gate `%\s*3` only in engine internals, export round-trip.
+- [x] **M5 — Sheet pipeline + Algorithms page + alg data v0** (2026-07-06). Pipeline
+  re-keyed through engine helpers only: renderKey = full-state `stateKey`, canon =
+  `realCanonKey` y²-fold; PRES entries are `[renderKey, name]`; DEFERRED namespace +
+  every L4E-merge/TL4E-split special case deleted; `data/prior-sheet.json` = `{}` and
+  `broken-algs.json` = `[]` (both mechanisms kept, empty); the compiler now also
+  GENERATES `data/classmap.json` (canon → lowercased subset id, first subset wins,
+  conflicts reported). Engine: `preprocessAlg` strips `[setup]` brackets (y-family
+  setups are real rotation tokens on a Skewb); 2 new tests → 46/46. **Direction
+  convention pinned operationally** (there is NO state-level 90° y symmetry — pure
+  facelet/conjugation relations between presentations don't exist, verified): 
+  `prependAUF(p, frontAlg)` = alg for p = 0 Front / 1 Right / 2 Back / 3 Left ("case
+  on the Right → y → run the Front alg"); machine-verified: `caseStateOf` of a
+  y²-prefixed alg == the y²-sym image (so Front/Back share one canon, Right/Left the
+  other — a case is ≤ 2 canons; engine test added). algs.js kept the editor chassis,
+  replaced the taxonomy: data-driven SECTIONS (one tab per JSON subset, authored
+  order, lands on first non-empty), case cards group algs by the EXACT presentation
+  state each solves (no per-row realignment needed) with direction labels computed
+  from the case anchor, sidebar = case anchors, WCA/NS toolbar switch (shared
+  `skewbiks-notation` pref; NS input converted and stored as WCA), draft key
+  `skewbiks-algsheet-draft`, export = `skewb_algs.json` (deep-clone + deltas, no
+  remapping). **Alg data v0 is a MACHINE-GENERATED seed** (BFS-optimal algs;
+  generator in the session scratchpad): subsets FL / Sarah-Intermediate /
+  Sarah-Advanced / NS (the proposal — still awaiting user confirmation), with
+  Sarah-Intermediate seeded: 18 cases / 135 algs = both LL-corner-twist cases
+  (centers solved; 8 states → 2 y-orbits) + all 16 last-layer center-perm cases
+  (corners AND the D center solved — the post-FL center space, even perms of the
+  5 remaining centers; 59 states → 16 y-orbits, exhaustive over that pool).
+  Case names are descriptive
+  placeholders ("Two corners twisted", "Centers 3-cycle F→L→B") — USER authoring
+  replaces/extends via the page editor or the JSON. Gates: `npm run build` fully
+  green (check-sheet: 135 algs, 0 NOSOLVE, structure clean), `check:fresh` green,
+  `%\s*3` absent from all M5 surfaces, algs.html verified in headless Edge (NOTE:
+  virtual-time starves on this page — no CPU pin; use playwright-core with
+  channel msedge for real waits), engine tests 46/46.
+  - **Same-day post-review fixes (multi-agent review, 11 confirmed findings):**
+    compiler — identity algs (empty string, "R R'") now FAIL the build instead of
+    minting a bogus solved-state case, and no output is written on ANY failed
+    check (the unparseable-skip and coverage-gap failures previously fired after
+    the write); check-sheet — PRES↔ALG/CNAME structural checks are now
+    bidirectional plus a solved-key guard; engine — preprocessAlg strips brackets
+    only around pure-ROTATION groups (commutator notation "[R, U]" is rejected,
+    not silently misread as "R U"), and nsToWCA now routes through preprocessAlg
+    (the NS-mode adder accepts bracketed setups it displays); algs.js — exportJSON
+    publishes the admin's saved row order and recomputes meta.counts, and the
+    localStorage draft self-heals against the published baseline on load (no
+    duplicate rows after export → commit → redeploy); check-fresh now also covers
+    data/classmap.json; README data-flow + the seed's center section labels
+    corrected ("Last layer centers"). Engine tests 48/48.
 - [ ] **M6 — Trainer.** Fork `src/trainer/l5e-trainer.jsx` → `skewb-trainer.jsx` (new
   build.mjs entry). Keep the chassis (timer, storage bridge under new key
   `skewb-trainer-v1` with legacy migrations deleted, session/recap, stats, case-picker);
@@ -131,10 +169,10 @@ Items the 2026-07-03 OO code review adds to the milestones above:
 - **M4:** carry-items (a)/(b)/(c) all landed (see the M4 status entry above);
   the USER console steps + live round-trip gate are deferred until after M5
   starts — follow the numbered checklist in the M4 entry when resuming them.
-- **M5:** as specced. Also kills the known-dead algs.js destructuring of dropped
-  contract members (`applyMoveK`/`openOfEkey`/`barOfEkey`) and turns
-  `npm run build`/`check:fresh` green — after M5, run `check:fresh` before every
-  commit (stamps are manual discipline until then; `npm run stamp` before commits).
+- **M5:** LANDED (see the status entry) — the dead algs.js destructuring of dropped
+  contract members (`applyMoveK`/`openOfEkey`/`barOfEkey`) is gone and
+  `npm run build`/`check:fresh` are green. Standing rule now in effect: run
+  `check:fresh` before every commit.
 - **M6:** as specced. Decide whether the trainer imports `R.COLORS` (kept exported
   for exactly this) or inlines its own palette — un-export if unused.
 - **M7:** as specced. Engine exports `composeSym`/`FACE_ID`/`faceCompose`/
