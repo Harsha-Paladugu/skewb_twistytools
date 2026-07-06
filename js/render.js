@@ -133,6 +133,5 @@ function iso3dSVG(state, width, yawOrM, pitch, opts) {
 
 const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.45 }; // shows U, L and F from a little above (WCA-hold side)
 
-// COLORS stays exported as the site's puzzle palette (M6 trainer candidate).
-module.exports = { netSVG, iso3dSVG, viewMatrix, rotateView, COLORS, DEFAULT_VIEW };
+module.exports = { netSVG, iso3dSVG, viewMatrix, rotateView, DEFAULT_VIEW };
 window.OORender = module.exports;})();

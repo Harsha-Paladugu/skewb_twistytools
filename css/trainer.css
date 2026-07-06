@@ -1,4 +1,4 @@
-/* Pyraminx.net — V-First trainer page styles.
+/* Skewbiks.com — Skewb trainer page styles.
    The app was written against its own token names; map them onto the site tokens. */
 :root{
   --bodyf:var(--body); --monof:var(--mono); --dimc:var(--dim);
@@ -9,25 +9,18 @@
   font-size: 15px; line-height: 1.5; }
 .frame { width: 100%; max-width: 1012px; }
 
-/* page header: trainer title + settings. Scoped to the trainer's own header so
-   it doesn't restyle the shared site navbar (also a <header>). */
+/* page header: trainer title + notation switch + settings. Scoped to the
+   trainer's own header so it doesn't restyle the shared site navbar. */
 .frame > header { display: flex; align-items: center; gap: 14px; margin: 4px 0 20px; flex-wrap: wrap; }
 .brandrow { display: flex; align-items: center; gap: 11px; }
-.logo { width: 26px; height: 24px; color: var(--txt); display: block; }
 .brand { font-family: var(--disp); font-weight: 700; font-size: clamp(22px, 3vw, 27px); letter-spacing: -.005em; }
 .brand span { color: var(--mut); font-weight: 600; }
 .spacer { flex: 1; }
-.bar-tri { width: 58px; height: 52px; cursor: pointer; }
-.tri-fill { fill: var(--panel2); }
-.tri-edge { stroke: var(--line2); stroke-width: 7; stroke-linecap: round; cursor: pointer; transition: stroke .15s; }
-.tri-edge:hover { stroke: var(--mut); }
-.tri-edge.sel { stroke: var(--yellow); }
-.tri-label { fill: var(--mut); font-size: 16px; text-anchor: middle; font-family: var(--monof); pointer-events: none; }
 .gear { background: transparent; color: var(--mut); border: 1px solid var(--line2); border-radius: 9px;
   padding: .55em 1em; cursor: pointer; font-size: 13.5px; font-family: inherit; }
 .gear:hover { color: var(--txt); border-color: var(--mut); }
 
-/* set chips — same pill language as the solver's method chips */
+/* subset / group chips — same pill language as the solver's method chips */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--panel); color: var(--mut);
@@ -38,28 +31,23 @@
 .chip.on { background: var(--yellow); border-color: var(--yellow); color: var(--actink); }
 .chip.on .ct { color: rgba(35,28,5,.66); }
 .chip.on .dot { background: var(--cdot, var(--actink)); box-shadow: 0 0 0 1px rgba(35,28,5,.35); }
-.chip.off { opacity: .35; cursor: default; }
-.chip.lenchip { min-width: 44px; justify-content: center; }
 .grouplabel { font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dimc); font-weight: 600; margin: 0 2px 0 6px; }
-.presets { display: flex; gap: 12px; margin: 4px 2px 16px; }
+.presets { display: flex; gap: 12px; margin: 4px 2px 16px; flex-wrap: wrap; }
 .preset { background: none; border: none; color: var(--dimc); font-size: 12.5px; cursor: pointer; padding: 0;
   font-family: inherit; text-decoration: underline dotted; }
 .preset:hover { color: var(--mut); }
 
-/* drill / recap toggle — same segment style as the 2D/3D view toggle */
-.modes { display: inline-flex; gap: 6px; margin-bottom: 16px; }
+/* segmented toggles (drill/recap, practice scope, view directions) */
+.modes { display: inline-flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
 .mode { background: transparent; border: 1px solid var(--line2); color: var(--mut); border-radius: 7px;
   padding: .3em .95em; font-size: 13px; font-family: inherit; cursor: pointer; }
 .mode.on { color: var(--actink); background: var(--act); border-color: var(--act); font-weight: 600; }
-.tbtog { display: inline-flex; gap: 6px; margin-left: 2px; }
-.tbbtn { background: transparent; border: 1px solid var(--line2); color: var(--mut); border-radius: 7px;
-  padding: .25em .8em; font-size: 12.5px; font-family: inherit; cursor: pointer; }
-.tbbtn.on { color: var(--actink); background: var(--act); border-color: var(--act); font-weight: 600; }
 /* primary mode tabs (top of the page) */
 .modetabs { margin: 2px 0 18px; gap: 8px; }
 .modetabs .mode { padding: .5em 1.2em; font-size: 14px; }
 .chips .modes { margin-bottom: 0; }            /* segmented control nested in a label row */
-/* collapsible Setup card (Drill/Recap config) */
+
+/* collapsible Setup card */
 .setupcard { padding: 0; margin-bottom: 18px; overflow: hidden; }
 .setuphead { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none;
   color: var(--txt); font: inherit; cursor: pointer; padding: 13px 18px; text-align: left; }
@@ -68,32 +56,26 @@
 .setupsum { color: var(--mut); font-size: 13px; font-weight: 400; }
 .setuphead .chev { margin-left: auto; font-size: 12px; }
 .setupbody { padding: 4px 18px 14px; border-top: 1px solid var(--line); }
-
-/* inputs — same field style as the scramble search box */
-.psoinp, .timein { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
-  color: var(--txt); font-family: var(--monof); outline: none; }
-.psoinp { margin-left: 2px; padding: .5em .8em; font-size: 12.5px; width: 210px; }
-.timein { margin-left: 6px; padding: .35em .7em; font-size: 12px; width: 92px; }
-.psoinp:focus, .timein:focus, .trainsel:focus { border-color: var(--yellow); }
-.psoinp.bad { border-color: var(--red); color: var(--red); }
-.trainsel { margin-left: 14px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
-  color: var(--txt); padding: .5em .8em; font-family: inherit; font-size: 13.5px; cursor: pointer; outline: none; }
+.filtersel { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
+  color: var(--txt); padding: .4em .7em; font-family: inherit; font-size: 12.5px; cursor: pointer; outline: none; }
+.filtersel:focus { border-color: var(--yellow); }
 
 /* the stage — a card, like everywhere else on the site */
 .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: 24px 26px 22px; cursor: pointer; user-select: none; }
 .stagegrid { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: center; }
 @media (min-width: 640px) { .stagegrid { grid-template-columns: 1fr 300px; } }
+.stagegrid.recogstage { grid-template-columns: 1fr; justify-items: center; }
 .scramble { font-family: var(--monof); font-size: clamp(19px, 3vw, 27px);
   letter-spacing: .13em; line-height: 1.6; color: var(--txt); text-align: left; }
-.pyranet { width: 100%; max-width: 300px; justify-self: center; } /* match the puzzle size on the OO/solver tabs */
-.pyranet svg { width: 100%; height: auto; display: block; } /* OORender emits w/h attrs; let it scale to the wrapper */
+.skewbnet { width: 100%; max-width: 300px; justify-self: center; } /* match the puzzle size on the OO tab */
+.skewbnet svg { width: 100%; height: auto; display: block; } /* OORender emits w/h attrs; let it scale to the wrapper */
 .timer { font-family: var(--monof); font-weight: 300; text-align: center;
   font-size: clamp(56px, 11vw, 92px); line-height: 1.1; margin: 12px 0 4px;
   color: var(--txt); font-variant-numeric: tabular-nums; }
 .timer.running { color: var(--yellow); }
 .hint { color: var(--dimc); font-size: 13px; min-height: 1.2em; text-align: center; }
-.reveal { display: flex; justify-content: center; align-items: center; gap: 9px; font-size: 13px; color: var(--mut); }
+.reveal { display: flex; justify-content: center; align-items: center; gap: 9px; font-size: 13px; color: var(--mut); flex-wrap: wrap; }
 .reveal .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
   border-radius: 999px; font-weight: 500; color: var(--txt); background: var(--panel2);
   box-shadow: inset 0 0 0 1px var(--cdot); }
@@ -125,15 +107,11 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
   gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .casecard { background: var(--ink2); border: 1px solid var(--line); border-radius: 11px;
   padding: 9px 8px 7px; text-align: center; }
-.casecard .pyranet { max-width: 78px; }
-.casecard.click { cursor: pointer; transition: border-color .15s; }
-.casecard.click:hover { border-color: var(--mut); }
+.casecard .skewbnet { max-width: 78px; margin: 0 auto; }
 .casenums { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
 .casenums .mono { font-size: 13px; color: var(--txt); }
 .casesub { font-size: 10.5px; color: var(--dimc); }
-.casesub.acc { color: var(--mut); }
 .casename { color: var(--txt); font-weight: 500; }
-.acctag { color: var(--dimc); font-size: 11px; margin-left: 6px; }
 .mono { font-family: var(--monof); }
 .times { display: flex; flex-wrap: wrap; gap: 6px; }
 .timepill { font: 500 12.5px var(--monof); padding: 3px 9px;
@@ -148,30 +126,19 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .danger { background: transparent; color: var(--red); border: 1px solid rgba(232,71,61,.5); border-radius: 9px;
   padding: .45em .9em; cursor: pointer; font-family: inherit; font-size: 12.5px; }
 .danger:hover { background: rgba(232,71,61,.12); }
-.resetwarn { color: var(--red); font-size: 13px; font-weight: 500; }
 .markwrap { display: inline-flex; gap: 4px; align-items: center; }
 .markwrap .markbtn { padding: 3px 8px; font-size: 11px; } /* compact "K" toggle next to a case chip */
 .markbtn { background: transparent; border: 1px solid var(--line2); color: var(--mut); border-radius: 999px;
   padding: 4px 12px; cursor: pointer; font-family: inherit; font-size: 12.5px; }
 .markbtn:hover { color: var(--txt); border-color: var(--mut); }
 .markbtn.ok.sel { border-color: var(--green); color: var(--green); background: rgba(63,191,82,.12); }
-.markbtn.miss.sel { border-color: var(--red); color: var(--red); background: rgba(232,71,61,.12); }
 
-/* verify-my-solution block */
-.vfask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-.vfres { margin-top: 14px; }
-.vfverdict { font-size: 14px; color: var(--txt); margin-bottom: 10px; }
-.vfverdict.good { color: var(--green); }
-.vfsols { max-height: 240px; overflow-y: auto; }
-.vtype { color: var(--dimc); font-size: 11px; margin-left: 10px; }
-
-/* algorithm sheet + modals — same dialog as the rotation popup */
+/* case-browser modal — same dialog language as the site's popups */
 .overlay { position: fixed; inset: 0; background: rgba(8,10,14,.55); display: flex;
   align-items: center; justify-content: center; padding: 18px; z-index: 48; }
 .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  width: 100%; max-width: 580px; max-height: 84vh; overflow-y: auto; padding: 18px 20px;
+  width: 100%; max-width: 640px; max-height: 84vh; overflow-y: auto; padding: 18px 20px;
   box-shadow: 0 24px 70px rgba(0,0,0,.45); cursor: default; }
-.helpmodal { max-width: 660px; }
 .modalhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .modaltitle { font-family: var(--disp); font-size: 19px; font-weight: 700; margin-bottom: 7px; }
 .modal .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 12px;
@@ -181,28 +148,29 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .closebtn { background: none; border: none; color: var(--dimc); font-size: 22px; cursor: pointer;
   line-height: 1; padding: 2px 6px; font-family: inherit; }
 .closebtn:hover { color: var(--txt); }
-.panelimg { display: flex; justify-content: center; margin: 6px 0 14px; }
-.panelimg .pyranet { max-width: 150px; }
-.panelimg.small { margin: 0; }
-.panelimg.small .pyranet { max-width: 92px; }
-.alggroup { margin-bottom: 14px; }
-.grouphead { font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dimc);
-  font-weight: 600; margin-bottom: 6px; }
 .bartag { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--mut); margin-left: 6px; }
-.alglist { display: flex; flex-direction: column; gap: 4px; }
-.algrow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  padding: 6px 10px; background: var(--panel2); border-radius: 8px; }
-.algrow .alg { font-size: 13.5px; color: var(--txt); letter-spacing: .04em; }
-.algrow .algname { font-size: 11px; color: var(--dimc); white-space: nowrap; }
-.algbtn { background: transparent; border: 1px solid var(--line2); color: var(--mut); border-radius: 999px;
-  padding: 4px 12px; cursor: pointer; font-size: 12.5px; font-family: inherit; }
-.algbtn:hover { color: var(--txt); border-color: var(--mut); }
-.presrow { display: flex; gap: 14px; align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--line); }
-.presbody { flex: 1; }
-.helpsec h4 { margin: 14px 0 4px; font-size: 13.5px; color: var(--txt); }
-.helpsec p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--mut); }
 
-/* collapsible set groups + per-case picker (Drill/Recap) */
+/* alg list (drill reveal + recognition reveal) */
+.alglist { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; max-height: 300px; overflow-y: auto; }
+.algrow { display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; background: var(--panel2); border-radius: 8px; }
+.algrow .alg { font-size: 13.5px; color: var(--txt); letter-spacing: .04em; flex: 1; }
+.algrow.suspectrow { opacity: .6; }
+.alg .tok { margin-right: .5em; display: inline-block; }
+.alg .tok:last-child { margin-right: 0; }
+.alg .tok.rot { color: #7fb0ff; } /* lightened var(--blue) for dark panels */
+.ychip { flex: 0 0 2.1em; text-align: center; font: 700 12px var(--monof);
+  color: #7fb0ff; border: 1px solid rgba(127,176,255,.45); border-radius: 6px; padding: 1px 0; }
+.ychip.blank { visibility: hidden; }
+.fmkey { flex: 0 0 2.4em; text-align: center; font: 700 13px var(--monof);
+  color: var(--actink); background: var(--act); border-radius: 6px; padding: 1px 0; }
+.fmkey.blank { color: var(--dim); background: transparent; border: 1px dashed var(--line2); }
+.ratetag { font: 500 10px var(--monof); border: 1px solid var(--line2); border-radius: 5px; padding: 0 4px; color: var(--mut); }
+.ratetag.best { color: var(--green); border-color: var(--green); opacity: .85; }
+.ratetag.poor { color: var(--dim); }
+.warntag { color: var(--yellow); font-size: 12px; }
+
+/* collapsible subset groups in Setup */
 .setgrp { margin-bottom: 8px; }
 .setgrp > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
   padding: 4px 2px; user-select: none; }
@@ -210,33 +178,16 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .setgrp > summary::before { content: "\25B8"; color: var(--dimc); font-size: 11px; }
 .setgrp[open] > summary::before { content: "\25BE"; }
 .setgrp > summary .ct { color: var(--dimc); font: 500 11px var(--monof); }
-.casepick { margin: 2px 0 6px; }
-.casetoggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
-  color: var(--mut); font: inherit; font-size: 13.5px; padding: 5px 2px; }
-.casetoggle:hover { color: var(--txt); }
-.casetoggle .chev { color: var(--dimc); font-size: 11px; margin: 0; }
-.casetoggle .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.casetoggle .ct { color: var(--dimc); font: 500 11px var(--monof); }
-.caselistwrap { border-left: 1px solid var(--line2); padding: 6px 0 6px 12px; margin: 2px 0 8px 6px; }
 
-/* Solution trainer: move-count guesser + optimal-solution list */
-.guessrow { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; }
-.guessbtn { width: 52px; height: 52px; border-radius: 11px; border: 1px solid var(--line2);
-  background: var(--panel2); color: var(--txt); font: 20px var(--monof); cursor: pointer; transition: all .15s ease; }
-.guessbtn:hover { border-color: var(--yellow); color: var(--yellow); }
+/* full-solve analysis: optimal-line pills + first-layer decomposition */
+.analysis { margin-top: 8px; cursor: default; }
 .solhead { text-align: center; color: var(--dimc); font-size: 11.5px; text-transform: uppercase;
   letter-spacing: .1em; font-weight: 600; margin: 14px 0 8px; }
 .sollist { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-height: 168px; overflow-y: auto; }
 .solpill { font: 500 13px var(--monof); letter-spacing: .04em; color: var(--txt);
   background: var(--panel2); border-radius: 7px; padding: 4px 10px; }
-.timer.good { color: var(--green); font-size: clamp(40px, 8vw, 64px); }
-.timer.bad { color: var(--red); font-size: clamp(40px, 8vw, 64px); }
-
-/* pseudo-offset input (Solution/Recog) — same field language as .psoinp */
-.offsetin { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; color: var(--txt);
-  font-family: var(--monof); outline: none; margin-left: 2px; padding: .5em .8em; font-size: 12.5px; width: 210px; }
-.offsetin:focus { border-color: var(--yellow); }
-.offsetbad { font-size: 11.5px; color: var(--red); }
+.solpill.fl { box-shadow: inset 0 0 0 1px var(--green); }
+.methodrow { margin-top: 4px; }
 
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -22,7 +22,7 @@
 <link rel="icon" href="img/logo.svg?v=5b08bb0a" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png?v=e94eb1b7">
 <link rel="stylesheet" href="css/site.css?v=02194ec7">
-<link rel="stylesheet" href="css/trainer.css?v=63b1dc7a">
+<link rel="stylesheet" href="css/trainer.css?v=e4b8a5eb">
 </head>
 <body>
 <!-- Shared account layer (site-wide sign in), then the navbar (which auto-mounts
@@ -32,9 +32,11 @@
 <script src="js/navbar.js?v=3a30f3fe"></script>
 <script>new SiteNavbar({ active: 'trainer' }).mount(document.body);</script>
 <div id="root"></div>
-<!-- Shared puzzle renderer (same code the rest of the site uses for diagrams). -->
+<!-- Shared puzzle renderer + BFS table cache (same code the rest of the site
+     uses for diagrams and the census's distance table). -->
 <script src="js/engine.js?v=4cdf41b9"></script>
-<script src="js/render.js?v=f19d95a6"></script>
+<script src="js/render.js?v=572369bc"></script>
+<script src="js/tables.js?v=c3018e26"></script>
 <script>
 /* Trainer storage bridge.
    The bundled trainer reads/writes its whole state through window.storage
@@ -80,7 +82,7 @@
   function boot() {
     if (booted) return; booted = true; bootUid = curUid();
     var s = document.createElement('script');
-    s.src = 'js/trainer.js?v=1ea99302';
+    s.src = 'js/trainer.js?v=762cc139';
     document.body.appendChild(s);
   }
   if (A && A.whenReady) {

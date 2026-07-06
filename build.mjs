@@ -16,7 +16,7 @@ const options = {
   target: 'es2018',
   jsx: 'transform',               // classic runtime: source imports React and uses JSX
   outfile: 'js/trainer.js',
-  banner: { js: '/* Pyraminx.net — V-First trainer (bundled React app). Styles: css/trainer.css */' },
+  banner: { js: '/* Skewbiks.com — Skewb trainer (bundled React app). Styles: css/trainer.css */' },
   logLevel: 'info',
 };
 

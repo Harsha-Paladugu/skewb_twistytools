@@ -59,7 +59,7 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     `NS_CORNER`, render `STICKERS`); `render.js` now uses the same shadowed-module
     IIFE as engine.js/tables.js (the old `typeof module` branch silently skipped
     `window.OORender` under the documented Node window-stub recipe).
-- [~] **M4 — Firebase** (2026-07-03, agent side done — USER console steps remain).
+- [x] **M4 — Firebase** (2026-07-03 agent side; USER console steps completed 2026-07-06).
   Project **`skewbiks`** + web app created via MCP; creds in `js/config.js` (demo mode
   off); `.firebaserc` pins the project; rules deployed (verified byte-identical via
   `firebase_get_security_rules`). Rules tests: 25/25 green against the emulator
@@ -74,17 +74,13 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
   formats"; (c) pageMod scramble/solution now display through the WCA/NS switch
   (verification still runs on stored text + notation).
   **Firestore DB creation is console-only on Spark** (API/CLI CreateDatabase requires
-  billing — confirmed against Firebase docs), so it's a USER step.
-  **DEFERRED 2026-07-05 (user decision): the console steps wait; M5 proceeds first.**
-  Until they're done, oo.html's backend is intentionally dead — census shows 0 solved
-  and sign-in fails. That is NOT a bug; do not debug or revert `js/config.js` to demo
-  mode. Checklist when resuming (details in SETUP.md §1–4): ① create the (default) DB
-  in the console (nam5, production mode); ② REDEPLOY the rules — the create wizard
-  overwrites them (`firebase deploy --only firestore:rules` or Firebase MCP); ③ enable
-  the Google sign-in provider; ④ sign in on oo.html, read the uid from the About tab,
-  create `admins/{uid}` (console/MCP write bypasses rules); ⑤ run the remaining gate:
-  live submit → moderate → done-bitmap round-trip (+ try the admin "Recompute solved
-  bitmap" button once).
+  billing — confirmed against Firebase docs), so it was a USER step; deferred
+  2026-07-05, **COMPLETED 2026-07-06 by the USER**. Verified via Firebase MCP: the
+  `(default)` Firestore DB exists (nam5, native mode, created 2026-07-04), the
+  deployed rules match `firestore.rules`, and the `admins` / `meta` / `solutions`
+  collections are live — i.e. sign-in, the admin bootstrap and a live submit
+  round-trip all happened. **The census backend is ON**; demo mode stays off.
+  SETUP.md remains the reference walkthrough for a rebuild-from-scratch.
 - [x] **M5 — Sheet pipeline + Algorithms page + alg data v0** (2026-07-06). Pipeline
   re-keyed through engine helpers only: renderKey = full-state `stateKey`, canon =
   `realCanonKey` y²-fold; PRES entries are `[renderKey, name]`; DEFERRED namespace +
@@ -176,14 +172,43 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     (validated 1320 agree / 42 differ vs the sheets' own columns; disagreements are
     kept per-alg as `firstMoveSheet`, mostly the suspect algs). Rating chips
     (best/poor) shown; best sorts first within a first-move row.
-- [ ] **M6 — Trainer.** Fork `src/trainer/l5e-trainer.jsx` → `skewb-trainer.jsx` (new
-  build.mjs entry). Keep the chassis (timer, storage bridge under new key
-  `skewb-trainer-v1` with legacy migrations deleted, session/recap, stats, case-picker);
-  rewrite the substrate against engine coords (drop the private BFS coordinate copy —
-  use `E.idx/unidx`; pools via `enumFreeSlots`; scrambles via masked BFS / `optimalScramble`).
-  Three modes: drill, full-solve timer + post-solve analysis (optimal line + movecount
-  stage splits via first-layer detection), case recognition (timed multiple choice at a
-  random y² presentation). Gate: `build:trainer` green; each mode loops in the browser.
+- [x] **M6 — Trainer** (2026-07-06). `src/trainer/skewb-trainer.jsx` + `skewb-core.mjs`
+  (the substrate is plain ESM so `tools/test-trainer.mjs` can import it in Node); the
+  Pyraminx `l5e-trainer.jsx` was DELETED (git history retains it). Chassis kept: rAF
+  timer + space/tap (350 ms tap-guard ref now inits to `-Infinity` — a warm-IndexedDB
+  boot beats 350 ms and swallowed the first Space), `window.storage` under NEW key
+  `skewb-trainer-v1` (shape-validated hydration, NO migrations), session pills,
+  per-case stats, recap queue. **Data source: the trainer fetches
+  `data/skewb_algs.json` at runtime** (algs.js pattern) — the compiled SHEET lacks the
+  ns/rating/firstMove/nav fields it shows; bundle 416→172 KB. Dist table =
+  `OOTables.loadOrBuildDist` shared with the census (trainer.html now loads
+  `js/tables.js`); masked scrambles ported onto `E.idx`/`applyMoveIdx` (native pairs
+  `m>>1`/`m^1`, length window [9,12] vs diameter 11, fallback `optimalScramble`).
+  Three modes:
+  ① **Drill/Recap** — group-based picker from the subsets' `nav` blocks (group pills +
+  per-case browser with the nav filter dropdown), per-subset **view toggles
+  Front/Right/Back/Left** (default Front; targets synthesized
+  `caseStateOf(prependAUF(p, frontAlg))` — ALL 3,114 v1 algs are Front-authored);
+  reveal shows a y-rotation chip + the authored NS text verbatim + first-move chips +
+  rating tags (suspects trail); stats keyed (subset, case, direction); scope
+  All/Learning/Known + known marks per view (pool edits swap the pending problem
+  WITHOUT clearing a stop-screen reveal — marking known must not eat it).
+  ② **Full solve** — uniform random reachable state (rejection sample on dist),
+  masked scramble; analysis = direct-optimal lines (capped DFS descent) + a
+  first-layer decomposition (best FL line by total over capped optimal-FL descents +
+  optimal finish) via a second multi-source goal-distance BFS — seeds = 6 faces ×
+  540 `enumFreeSlots` layer states, **max FL distance is 6** — built lazily on first
+  open, cached under the trainer-owned IndexedDB key `trainer-fldist-v1`.
+  ③ **Recognition** — reveal-style self-graded (USER decision, supersedes the old
+  "multiple choice" sketch) at a coin-flipped y² view (the y²-sym image IS the d+2
+  presentation — engine-tested). WCA/NS toolbar switch (shared `skewbiks-notation`,
+  default ns). `R.COLORS` un-exported (M6 carry-item resolved). New
+  `npm run test:trainer` = 23 substrate tests (model counts vs the JSON, presentation
+  geometry incl. the p/p+2 canon fold, masked-scramble correctness + window, layer
+  predicate/seeds/goal-dist, analysis round-trips). Gates: `npm run build` +
+  `check:fresh` green, engine tests 48/48 untouched, headless-Edge E2E
+  (playwright-core, channel msedge, real waits) drives all three modes end-to-end —
+  including a scramble-reproduces-the-shown-diagram check and reload persistence.
 - [ ] **M7 — Solver.** New `METHOD_DEFS`/`METHOD_PRIORITY` in solver-core (proposal to
   confirm with user: `fl` first layer cap 7, `flm1` FL−1 cap 5, `psfl` pseudo-FL; targets
   from `enumFreeSlots` pools; frames go 12→24? NO — frames stay the engine's `makeFrames`;
@@ -209,15 +234,15 @@ data (done-bitmap, solution docs) are frozen and documented before M4 goes live;
 
 Items the 2026-07-03 OO code review adds to the milestones above:
 
-- **M4:** carry-items (a)/(b)/(c) all landed (see the M4 status entry above);
-  the USER console steps + live round-trip gate are deferred until after M5
-  starts — follow the numbered checklist in the M4 entry when resuming them.
+- **M4:** DONE — carry-items (a)/(b)/(c) landed, and the USER console steps +
+  live round-trip completed (verified via Firebase MCP 2026-07-06; see the M4
+  status entry).
 - **M5:** LANDED (see the status entry) — the dead algs.js destructuring of dropped
   contract members (`applyMoveK`/`openOfEkey`/`barOfEkey`) is gone and
   `npm run build`/`check:fresh` are green. Standing rule now in effect: run
   `check:fresh` before every commit.
-- **M6:** as specced. Decide whether the trainer imports `R.COLORS` (kept exported
-  for exactly this) or inlines its own palette — un-export if unused.
+- **M6:** LANDED — `R.COLORS` un-exported (nothing imports it; the trainer's
+  subset chips use their own hex palette, not the face colors).
 - **M7:** as specced. Engine exports `composeSym`/`FACE_ID`/`faceCompose`/
   `optimalSolution` exist for Pyraminx-era solver-core + tests only — if the M7
   rewrite doesn't use them, un-export.
