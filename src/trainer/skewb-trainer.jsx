@@ -109,9 +109,11 @@ export default function SkewbTrainer() {
   const [elapsed, setElapsed] = useState(0);
   const [last, setLast] = useState(null);
   const [caseStats, setCaseStats] = useState({});
-  const [recogStats, setRecogStats] = useState({});   // full view: uid -> {n, hit, sum(ms), subset, name}
-  const [recog3Stats, setRecog3Stats] = useState({}); // 3+2 partial view, same shape
-  const [recogView, setRecogView] = useState("full"); // 'full' | 'partial'
+  const [recogStats, setRecogStats] = useState({});     // full view: uid -> {n, hit, sum(ms), subset, name}
+  const [centersStats, setCentersStats] = useState({}); // centers quiz: answer -> {n, hit, dk, sum(ms)}
+  const [recogView, setRecogView] = useState("full");   // 'full' | 'centers'
+  const [centerSel, setCenterSel] = useState(["U", "F", "L"]); // the chosen 3-center combo (in pick order)
+  const [cornersOn, setCornersOn] = useState(false);    // also show 2 random U-layer corners
   const [solveStats, setSolveStats] = useState({ n: 0, best: Infinity, sum: 0 });
   const [session, setSession] = useState([]);
   const [recap, setRecap] = useState(null);
@@ -166,8 +168,13 @@ export default function SkewbTrainer() {
               set(rs);
             };
             readGrades(d.recogStats, setRecogStats);
-            readGrades(d.recog3Stats, setRecog3Stats);
-            if (d.recogView === "full" || d.recogView === "partial") setRecogView(d.recogView);
+            readGrades(d.centersStats, setCentersStats);
+            if (d.recogView === "full" || d.recogView === "centers") setRecogView(d.recogView);
+            if (Array.isArray(d.centerSel)) {
+              const cs = d.centerSel.filter((f) => core.RECOG_CENTERS.includes(f)).slice(0, 3);
+              if (cs.length) setCenterSel(cs);
+            }
+            if (typeof d.cornersOn === "boolean") setCornersOn(d.cornersOn);
           }
         }
       } catch (e) { /* first run / foreign blob */ }
@@ -215,10 +222,10 @@ export default function SkewbTrainer() {
     try {
       window.storage.set(STORE_KEY, JSON.stringify({
         subsetSel, groupSel, dirSel, caseOff: [...caseOff], caseKnown: [...caseKnown],
-        scope, mode, setupOpen, caseStats, solveStats, recogStats, recog3Stats, recogView, ...over,
+        scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn, ...over,
       })).catch(() => {});
     } catch (e) {}
-  }, [subsetSel, groupSel, dirSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, recog3Stats, recogView]);
+  }, [subsetSel, groupSel, dirSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn]);
   useEffect(() => {
     if (!loadedStore.current) return;
     clearTimeout(saveTimer.current);
@@ -280,53 +287,82 @@ export default function SkewbTrainer() {
     setCurrent(scramble ? { kind: "solve", state: st, scramble } : null);
   }, []);
 
+  // the centers quiz answers with the case's center-case field (NS
+  // `centerPattern`, EG2/TCLL `center`); cases without one can't be quizzed
+  const answerOf = (c) => c.centerPattern || c.center || null;
+  const quizEntries = useMemo(() => entries.filter((en) => answerOf(en.c)), [entries]);
+  const quizOptions = useMemo(() => {
+    const seen = new Set(), out = [];
+    for (const en of quizEntries) { const a = answerOf(en.c); if (!seen.has(a)) { seen.add(a); out.push(a); } }
+    return out;
+  }, [quizEntries]);
+
   const nextRecog = useCallback(() => {
     setPhase("ready"); setLast(null);
-    if (!entries.length) { setCurrent(null); return; }
-    const e2 = entries[Math.floor(Math.random() * entries.length)];
+    const pool = recogView === "centers" ? quizEntries : entries;
+    if (!pool.length || (recogView === "centers" && centerSel.length !== 3)) { setCurrent(null); return; }
+    const e2 = pool[Math.floor(Math.random() * pool.length)];
     const d = (e2.d + (Math.random() < 0.5 ? 2 : 0)) % 4; // coin-flip y² view (same canon)
     const state = core.stateForDir(e2.c, d);
     if (!state) { setCurrent(null); return; }
     const cur = { kind: "recog", c: e2.c, d, subset: e2.subset, state };
-    if (recogView === "partial") {
-      cur.view = core.pickView(); // fresh random 3 centers + 2 corners every round
+    if (recogView === "centers") {
+      cur.view = { centers: centerSel.slice().sort(), corners: cornersOn ? core.pickCorners() : [], fl: true };
       cur.mask = core.maskForView(state, cur.view);
+      cur.answerKey = answerOf(e2.c);
     }
     shownAt.current = performance.now();
     setCurrent(cur);
-  }, [entries, recogView]);
+  }, [entries, quizEntries, recogView, centerSel, cornersOn]);
 
-  // other enabled cases whose 3+2 view reads EXACTLY the same (pool-wide scan;
-  // states are memoized, so only the first wide scan does real work)
-  const partialMatches = useCallback((shown) => {
+  // other center-case answers the shown view is ALSO consistent with (pool-wide
+  // scan; states are memoized, so only the first wide scan does real work)
+  const quizAmbiguity = useCallback((shown) => {
     const target = core.viewSignature(shown.state, shown.view);
-    const names = new Set();
-    for (const en of entries) {
-      if (en.c.uid === shown.c.uid) continue;
+    const others = new Set();
+    for (const en of quizEntries) {
+      const a = answerOf(en.c);
+      if (a === shown.answerKey) continue;
       for (const dd of [en.d, (en.d + 2) % 4]) {
         const st = core.stateForDir(en.c, dd);
-        if (st && core.viewSignature(st, shown.view) === target) { names.add(en.c.name); break; }
+        if (st && core.viewSignature(st, shown.view) === target) { others.add(a); break; }
       }
     }
-    return [...names];
-  }, [entries]);
+    return [...others];
+  }, [quizEntries]);
 
   const revealRecog = useCallback(() => {
-    if (!current || current.kind !== "recog" || phase === "stopped") return;
+    if (!current || current.kind !== "recog" || phase === "stopped" || current.view) return;
     const ms = performance.now() - shownAt.current;
-    const rec = { kind: "recog", ms, c: current.c, d: current.d, subset: current.subset, state: current.state, view: current.view || null };
-    if (current.view) rec.matches = partialMatches(current);
-    setLast(rec);
+    setLast({ kind: "recog", ms, c: current.c, d: current.d, subset: current.subset, state: current.state, view: null });
     setSession((s) => [...s.slice(-49), { kind: "recog", ms }]);
     setPhase("stopped");
-  }, [current, phase, partialMatches]);
+  }, [current, phase]);
 
-  // self-grade the revealed case (1 = recognized, 2 = missed); grading advances
+  // centers quiz: answer with a center-case name (or null = "don't know")
+  const answerCenters = useCallback((picked) => {
+    if (!current || !current.view || phase === "stopped") return;
+    const ms = performance.now() - shownAt.current;
+    const dk = picked === null;
+    const hit = !dk && picked === current.answerKey;
+    setLast({
+      kind: "recog", quiz: true, ms, c: current.c, d: current.d, subset: current.subset,
+      state: current.state, view: current.view, answerKey: current.answerKey, picked, dk, hit,
+      others: quizAmbiguity(current),
+    });
+    setCentersStats((cs) => {
+      const prev = cs[current.answerKey] || { n: 0, hit: 0, dk: 0, sum: 0 };
+      return { ...cs, [current.answerKey]: { n: prev.n + 1, hit: prev.hit + (hit ? 1 : 0), dk: prev.dk + (dk ? 1 : 0), sum: prev.sum + ms } };
+    });
+    setSession((s) => [...s.slice(-49), { kind: "recog", ms, hit: dk ? undefined : hit, dk }]);
+    setPhase("stopped");
+  }, [current, phase, quizAmbiguity]);
+
+  // full view only: self-grade the revealed case (1 = recognized, 2 = missed)
   const gradeRecog = useCallback((hit) => {
-    if (phase !== "stopped" || !last || last.kind !== "recog") return;
+    if (phase !== "stopped" || !last || last.kind !== "recog" || last.view) return;
     const { c, ms, subset } = last;
-    const setStats = last.view ? setRecog3Stats : setRecogStats;
-    setStats((rs) => {
+    setRecogStats((rs) => {
       const prev = rs[c.uid] || { n: 0, hit: 0, sum: 0 };
       return { ...rs, [c.uid]: { subset, name: c.name, n: prev.n + 1, hit: prev.hit + (hit ? 1 : 0), sum: prev.sum + ms } };
     });
@@ -420,12 +456,22 @@ export default function SkewbTrainer() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (caseBrowser) { if (e.code === "Escape") setCaseBrowser(null); return; }
       if (mode === "recog") {
+        const quiz = current && current.view;
         if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") {
           e.preventDefault();
-          if (phase === "stopped") nextRecog(); else revealRecog(); // space on a reveal = skip ungraded
-        } else if (phase === "stopped" && (e.code === "Digit1" || e.code === "Numpad1")) {
+          if (phase === "stopped") nextRecog();
+          else if (!quiz) revealRecog(); // quiz answers by choice, not reveal
+        } else if (quiz && phase !== "stopped") {
+          const m = e.code.match(/^(?:Digit|Numpad)(\d)$/); // 1..9, 0 = 10th option
+          if (m) {
+            e.preventDefault();
+            const i = m[1] === "0" ? 9 : +m[1] - 1;
+            const opts = quizOptions;
+            if (i < opts.length) answerCenters(opts[i]);
+          }
+        } else if (!quiz && phase === "stopped" && (e.code === "Digit1" || e.code === "Numpad1")) {
           e.preventDefault(); gradeRecog(true);
-        } else if (phase === "stopped" && (e.code === "Digit2" || e.code === "Numpad2")) {
+        } else if (!quiz && phase === "stopped" && (e.code === "Digit2" || e.code === "Numpad2")) {
           e.preventDefault(); gradeRecog(false);
         }
         return;
@@ -441,16 +487,16 @@ export default function SkewbTrainer() {
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [phase, trigger, stopTimer, mode, nextRecog, revealRecog, gradeRecog, last, caseBrowser]);
+  }, [phase, trigger, stopTimer, mode, nextRecog, revealRecog, gradeRecog, answerCenters, quizOptions, current, last, caseBrowser]);
 
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   useEffect(() => { if (phase !== "running") cancelAnimationFrame(raf.current); }, [phase]);
   useEffect(() => { if (mode === "drill" || mode === "recap") lastAlgoMode.current = mode; }, [mode]);
-  // switching Full <-> 3+2 regenerates the recognition problem
+  // switching the recognition view or its quiz settings regenerates the problem
   useEffect(() => {
     if (ready && mode === "recog") nextRecog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recogView]);
+  }, [recogView, centerSel, cornersOn]);
 
   // ---------- selection toggles ----------
   const toggleSubset = (key) => {
@@ -520,11 +566,11 @@ export default function SkewbTrainer() {
   const resetStats = () => {
     setCaseStats({});
     setRecogStats({});
-    setRecog3Stats({});
+    setCentersStats({});
     setSolveStats({ n: 0, best: Infinity, sum: 0 });
     setSession([]);
     setLast(null);
-    persist({ caseStats: {}, recogStats: {}, recog3Stats: {}, solveStats: { n: 0, best: Infinity, sum: 0 } });
+    persist({ caseStats: {}, recogStats: {}, centersStats: {}, solveStats: { n: 0, best: Infinity, sum: 0 } });
   };
 
   // ---------- alg list for a shown (case, dir) ----------
@@ -654,10 +700,29 @@ export default function SkewbTrainer() {
               <div className="chips" style={{ alignItems: "center" }}>
                 <span className="grouplabel">view</span>
                 <div className="modes">
-                  {[["full", "Full"], ["partial", "3 centers + 2 corners"]].map(([v, l]) => (
+                  {[["full", "Full"], ["centers", "Center cases"]].map(([v, l]) => (
                     <button key={v} className={"mode" + (recogView === v ? " on" : "")} onClick={() => setRecogView(v)}>{l}</button>
                   ))}
                 </div>
+                {recogView === "centers" && (
+                  <>
+                    <span className="grouplabel">centers</span>
+                    <div className="modes">
+                      {["L", "F", "R", "B", "U"].map((f) => (
+                        <button key={f} className={"mode" + (centerSel.includes(f) ? " on" : "")}
+                          onClick={() => setCenterSel((cs) => {
+                            if (cs.includes(f)) return cs.filter((x) => x !== f);
+                            if (cs.length < 3) return [...cs, f];
+                            return [...cs.slice(1), f]; // swap out the oldest pick
+                          })}>{f}</button>
+                      ))}
+                    </div>
+                    <button className={"chip" + (cornersOn ? " on" : "")} style={{ "--cdot": "var(--accent)" }}
+                      onClick={() => setCornersOn((v) => !v)} title="also show 2 random U-layer corners">
+                      <span className="dot" />+2 corners
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {(mode === "drill" || mode === "recap") && (
@@ -765,10 +830,33 @@ export default function SkewbTrainer() {
             </div>
             {current.view && phase !== "stopped" && (
               <div className="hint" style={{ marginTop: 6 }}>
-                showing {current.view.centers.join(" ")} centers + {current.view.corners.join(" ")} corners
+                first layer + {current.view.centers.join(" ")} centers{current.view.corners.length ? " + " + current.view.corners.join(" ") + " corners" : ""}
               </div>
             )}
-            {phase === "stopped" && last ? (
+            {phase === "stopped" && last && last.quiz ? (
+              <>
+                <div className={"quizverdict" + (last.hit ? " good" : last.dk ? "" : " bad")}>
+                  {last.hit ? "Correct — " + last.answerKey
+                    : last.dk ? "It was " + last.answerKey
+                    : "Not quite — " + last.answerKey + " (you picked " + last.picked + ")"}
+                </div>
+                <div className="reveal">
+                  <span className="tag" style={{ "--cdot": subColor(last.subset) }}>
+                    <span className="dot" />{last.subset}
+                  </span>
+                  <span className="casename">{last.c.name}</span>
+                  <span className="bartag">{DIRS[last.d]} view</span>
+                  <span className="mono">{fmt(last.ms)}s</span>
+                  <button className="restart" style={{ marginTop: 0 }} onClick={nextRecog}>Next (space)</button>
+                </div>
+                {last.others && last.others.length > 0 && (
+                  <div className="hint" style={{ marginTop: 6 }}>
+                    ⚠ with these centers this view is also consistent with: {last.others.join(", ")}
+                  </div>
+                )}
+                <AlgList c={last.c} d={last.d} />
+              </>
+            ) : phase === "stopped" && last ? (
               <>
                 <div className="reveal">
                   <span className="tag" style={{ "--cdot": subColor(last.subset) }}>
@@ -778,19 +866,24 @@ export default function SkewbTrainer() {
                   <span className="bartag">{DIRS[last.d]} view</span>
                   <span className="mono">{fmt(last.ms)}s</span>
                 </div>
-                {last.view && (
-                  <div className="hint" style={{ marginTop: 6 }}>
-                    {last.matches && last.matches.length
-                      ? "⚠ this 3+2 view also matches: " + last.matches.slice(0, 4).join(", ") + (last.matches.length > 4 ? ` (+${last.matches.length - 4} more)` : "")
-                      : "this 3+2 view pins the case uniquely in your pool"}
-                  </div>
-                )}
                 <div className="graderow">
                   <button className="gradebtn hit" onClick={() => gradeRecog(true)}>Recognized ✓ (1)</button>
                   <button className="gradebtn miss" onClick={() => gradeRecog(false)}>Missed ✗ (2)</button>
                   <button className="preset" onClick={nextRecog}>skip (space)</button>
                 </div>
                 <AlgList c={last.c} d={last.d} />
+              </>
+            ) : current.view ? (
+              <>
+                <div className="hint" style={{ marginTop: 14 }}>Which center case?</div>
+                <div className="quizrow">
+                  {quizOptions.map((opt, i) => (
+                    <button key={opt} className="quizbtn" onClick={() => answerCenters(opt)}>
+                      {i < 10 ? <span className="quizkey mono">{(i + 1) % 10}</span> : null}{opt}
+                    </button>
+                  ))}
+                  <button className="quizbtn dk" onClick={() => answerCenters(null)}>Don’t know</button>
+                </div>
               </>
             ) : (
               <>
@@ -898,12 +991,36 @@ export default function SkewbTrainer() {
                   </table>
                 )}
               </>
+            ) : mode === "recog" && recogView === "centers" ? (
+              <>
+                <h3>Center cases · {centerSel.length === 3 ? centerSel.slice().sort().join(" ") : "pick 3 centers"}{cornersOn ? " + 2 corners" : ""}</h3>
+                {(() => {
+                  const rows = quizOptions.map((a) => [a, centersStats[a]]).filter(([, s]) => s);
+                  if (!rows.length) return <div className="empty">Answer which center case the visible centers imply (or Don’t know) — accuracy lands here per center case.</div>;
+                  return (
+                    <table>
+                      <thead><tr><th>Center case</th><th>Seen</th><th>Correct</th><th>Don’t know</th><th>Accuracy</th></tr></thead>
+                      <tbody>
+                        {rows.map(([a, s]) => (
+                          <tr key={a}>
+                            <td className="name">{a}</td>
+                            <td className="mono">{s.n}</td>
+                            <td className="mono">{s.hit}</td>
+                            <td className="mono">{s.dk || 0}</td>
+                            <td className="mono">{Math.round((s.hit / s.n) * 100)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </>
             ) : mode === "recog" ? (
               <>
-                <h3>Recognition{recogView === "partial" ? " · 3 centers + 2 corners" : ""}</h3>
+                <h3>Recognition</h3>
                 {(() => {
-                  const rows = Object.entries(recogView === "partial" ? recog3Stats : recogStats);
-                  if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 recognized · 2 missed) — accuracy lands here per case{recogView === "partial" ? ", tracked separately from full-view grades" : ""}.</div>;
+                  const rows = Object.entries(recogStats);
+                  if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 recognized · 2 missed) — accuracy lands here per case.</div>;
                   const tot = rows.reduce((a, [, s]) => ({ n: a.n + s.n, hit: a.hit + s.hit, sum: a.sum + s.sum }), { n: 0, hit: 0, sum: 0 });
                   const missed = rows.filter(([, s]) => s.hit < s.n)
                     .sort((a, b) => (b[1].n - b[1].hit) - (a[1].n - a[1].hit));
@@ -1002,8 +1119,8 @@ export default function SkewbTrainer() {
                 {session.slice(-24).map((t, i) => (
                   <span key={i} className="timepill"
                     style={{ "--cdot": t.kind === "drill" ? subColor(t.subset)
-                      : t.hit === true ? "var(--green)" : t.hit === false ? "var(--red)" : "var(--accent)" }}>
-                    {t.hit === true ? "✓ " : t.hit === false ? "✗ " : ""}{fmt(t.ms)}
+                      : t.dk ? "var(--dim)" : t.hit === true ? "var(--green)" : t.hit === false ? "var(--red)" : "var(--accent)" }}>
+                    {t.dk ? "? " : t.hit === true ? "✓ " : t.hit === false ? "✗ " : ""}{fmt(t.ms)}
                   </span>
                 ))}
               </div>

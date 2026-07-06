@@ -170,6 +170,18 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .ratetag.poor { color: var(--dim); }
 .warntag { color: var(--yellow); font-size: 12px; }
 
+/* center-case quiz (Recognition · Centers view) */
+.quizrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+.quizbtn { border-radius: 9px; padding: .5em .9em; font: 600 13.5px var(--bodyf); cursor: pointer;
+  border: 1px solid var(--line2); background: var(--panel2); color: var(--txt);
+  display: inline-flex; align-items: center; gap: 7px; }
+.quizbtn:hover { border-color: var(--yellow); color: var(--yellow); }
+.quizbtn.dk { color: var(--dimc); font-style: italic; }
+.quizkey { font-size: 10.5px; color: var(--dimc); border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; }
+.quizverdict { text-align: center; font: 600 17px var(--bodyf); margin: 10px 0 8px; color: var(--txt); }
+.quizverdict.good { color: var(--green); }
+.quizverdict.bad { color: var(--red); }
+
 /* recognition self-grading */
 .graderow { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; }
 .gradebtn { border-radius: 9px; padding: .55em 1.2em; font: 600 14px var(--bodyf);

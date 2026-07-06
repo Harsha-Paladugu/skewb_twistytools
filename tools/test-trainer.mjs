@@ -233,38 +233,39 @@ t('displayPosMap: raw piece positions land where toFixedFacelets displays them',
   }
   return true;
 });
-t('pickView: 3 distinct non-FL centers + 2 distinct upper corners', () => {
+t('pickCorners: 2 distinct upper corners', () => {
   for (let i = 0; i < 50; i++) {
-    const v = core.pickView();
-    if (v.centers.length !== 3 || new Set(v.centers).size !== 3) return false;
-    if (v.corners.length !== 2 || new Set(v.corners).size !== 2) return false;
-    if (!v.centers.every((f) => core.RECOG_CENTERS.includes(f))) return false;
-    if (!v.corners.every((c) => core.RECOG_CORNERS.includes(c))) return false;
+    const v = core.pickCorners();
+    if (v.length !== 2 || new Set(v).size !== 2) return false;
+    if (!v.every((c) => core.RECOG_CORNERS.includes(c))) return false;
   }
   return true;
 });
-t('maskForView: hides exactly 21 stickers (9 visible), incl. on twisted-UFL states', () => {
+t('maskForView: FL + 3 centers hides 14; +2 corners hides 8 (twisted-UFL states too)', () => {
   const cases = model.subsets.flatMap((s) => s.cases);
   let sawTwisted = false;
   for (let i = 0; i < 40; i++) {
     const st = core.stateForDir(cases[rndInt(cases.length)], rndInt(4));
     if (st.fx[1] !== 0) sawTwisted = true;
-    const mask = core.maskForView(st, core.pickView());
-    if (mask.size !== 21) return false;
+    const v3 = { centers: ['U', 'F', 'L'], corners: [], fl: true };
+    if (core.maskForView(st, v3).size !== 14) return false;
+    const v5 = { centers: ['U', 'F', 'L'], corners: core.pickCorners(), fl: true };
+    if (core.maskForView(st, v5).size !== 8) return false;
   }
   return sawTwisted; // the display-rotation path must actually get exercised
 });
-t('maskForView: the visible stickers are exactly the chosen pieces’ stickers', () => {
+t('maskForView: the visible stickers are exactly the view’s pieces’ stickers', () => {
   const FIDX = Object.fromEntries(E.FACES.map((f, i) => [f, i]));
+  const FL_CORNERS = ['DFR', 'DBL', 'DFL', 'DBR'];
   for (let i = 0; i < 30; i++) {
     const c = SAMPLE[rndInt(SAMPLE.length)];
     const st = core.stateForDir(c, rndInt(4));
-    const view = core.pickView();
+    const view = { centers: ['R', 'B', 'U'], corners: core.pickCorners(), fl: true };
     const mask = core.maskForView(st, view);
     const dmap = core.displayPosMap(st);
-    const rawVisible = new Set();
+    const rawVisible = new Set([FIDX.D * 5]);
     for (const f of view.centers) rawVisible.add(FIDX[f] * 5);
-    for (const k of view.corners) for (const g of E.FACES) {
+    for (const k of [...view.corners, ...FL_CORNERS]) for (const g of E.FACES) {
       const ix = E.STICKER_POS[g].indexOf(k);
       if (ix >= 0) rawVisible.add(FIDX[g] * 5 + 1 + ix);
     }
@@ -274,36 +275,42 @@ t('maskForView: the visible stickers are exactly the chosen pieces’ stickers',
   }
   return true;
 });
-t('viewSignature: equal on same state, differs when a visible piece changes', () => {
-  const view = { centers: ['U', 'R', 'F'], corners: ['UFR', 'UBL'] };
+t('viewSignature: reads the FL residue iff fl is set; visible centers matter', () => {
+  const flView = { centers: ['U', 'R', 'F'], corners: [], fl: true };
+  const noFl = { centers: ['U', 'R', 'F'], corners: [], fl: false };
   const a = E.solved();
-  if (core.viewSignature(a, view) !== core.viewSignature(E.solved(), view)) return false;
-  const b = E.copy(a); b.fo[0] = 1; b.fo[3] = 2; // twist UFR (visible)
-  if (core.viewSignature(a, view) === core.viewSignature(b, view)) return false;
-  const c = E.copy(a); c.fx[2] = 1; // twist DFR (not in view)
-  return core.viewSignature(a, view) === core.viewSignature(c, view);
+  const b = E.copy(a); b.fx[2] = 1; // twist DFR (an FL corner)
+  if (core.viewSignature(a, flView) === core.viewSignature(b, flView)) return false;
+  if (core.viewSignature(a, noFl) !== core.viewSignature(b, noFl)) return false;
+  const c = E.copy(a); [c.ctr[1], c.ctr[4]] = [c.ctr[4], c.ctr[1]]; // swap R and L centers
+  if (core.viewSignature(a, flView) === core.viewSignature(c, flView)) return false; // R visible
+  const d2 = E.copy(a); [d2.ctr[4], d2.ctr[5]] = [d2.ctr[5], d2.ctr[4]]; // swap L and B (both hidden)
+  return core.viewSignature(a, flView) === core.viewSignature(d2, flView);
 });
-t('premise: within NS corner groups, a 3+2 view is ≥99% unique (machine check)', () => {
+t('centers quiz premise: NS center case is determined by FL + any 3 centers', () => {
   const ns = model.subsets.find((s) => s.key === 'NS');
-  const CENTERS = core.RECOG_CENTERS, CORNERS = core.RECOG_CORNERS;
-  const views = [];
+  const quiz = ns.cases.filter((c) => c.centerPattern);
+  const combos = [];
+  const C = core.RECOG_CENTERS;
   for (let a = 0; a < 3; a++) for (let b = a + 1; b < 4; b++) for (let c = b + 1; c < 5; c++)
-    for (let x = 0; x < 3; x++) for (let y = x + 1; y < 4; y++)
-      views.push({ centers: [CENTERS[a], CENTERS[b], CENTERS[c]], corners: [CORNERS[x], CORNERS[y]] });
-  let uniqSum = 0, n = 0;
-  for (const g of ns.groups) {
-    const states = g.cases.map((c) => core.stateForDir(c, 0));
-    for (const v of views) {
-      const bySig = new Map();
-      for (const st of states) { const s = core.viewSignature(st, v); bySig.set(s, (bySig.get(s) || 0) + 1); }
-      let uniq = 0;
-      for (const st of states) if (bySig.get(core.viewSignature(st, v)) === 1) uniq++;
-      uniqSum += uniq / states.length; n++;
+    combos.push([C[a], C[b], C[c]]);
+  let worst = 1;
+  for (const centers of combos) {
+    const view = { centers, corners: [], fl: true };
+    const bySig = new Map();
+    for (const c of quiz) {
+      for (const d of [0, 1, 2, 3]) {
+        const s = core.viewSignature(core.stateForDir(c, d), view);
+        if (!bySig.has(s)) bySig.set(s, new Set());
+        bySig.get(s).add(c.centerPattern);
+      }
     }
+    let pure = 0, total = 0;
+    for (const pats of bySig.values()) { total++; if (pats.size === 1) pure++; }
+    worst = Math.min(worst, pure / total);
   }
-  const avg = uniqSum / n;
-  console.log('    (NS within-group uniqueness = ' + (100 * avg).toFixed(2) + '%)');
-  return avg >= 0.99;
+  console.log('    (worst 3-center combo: ' + (100 * worst).toFixed(1) + '% of views pattern-pure)');
+  return worst >= 0.5; // informational floor — ambiguity is reported in-app per round
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

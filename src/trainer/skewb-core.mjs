@@ -359,31 +359,33 @@ export function createCore(E) {
     return null;
   }
 
-  // ---------- partial (3-centers + 2-corners) recognition ----------
+  // ---------- partial-view recognition (center-case quiz) ----------
   // A case's non-FL pieces: the 5 centers off the solved layer (FL = D in every
   // case state; y presentations keep it there) and the 4 upper corner slots.
-  // Machine-checked premise (2026-07-06): WITHIN a corner group (Pi/Peanut/…,
-  // TCLL sign+corner — context a solver knows from building FL), any 3 centers
-  // + 2 corners identify the case ≥99.9% uniquely (worst collision: one pair);
-  // ACROSS groups it is far weaker (TCLL ~1%), so reveals list pool matches.
+  // The quiz view shows the WHOLE first layer ("assume a layer is solved") plus
+  // a user-chosen 3-center combo, optionally plus 2 random upper corners.
   const RECOG_CENTERS = ['U', 'R', 'F', 'L', 'B'];
   const RECOG_CORNERS = ['UBR', 'UFL', 'UFR', 'UBL'];
   const AXIS_SLOT = { UBR: 0, UFL: 1 };
   const FREE_SLOT = { UFR: 0, UBL: 1 };
+  const FL_CORNERS = ['DFR', 'DBL', 'DFL', 'DBR']; // + the D center
 
-  function pickView() {
-    const pick = (arr, k) => {
-      const pool = arr.slice(), out = [];
-      for (let i = 0; i < k; i++) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-      return out.sort();
-    };
-    return { centers: pick(RECOG_CENTERS, 3), corners: pick(RECOG_CORNERS, 2) };
+  function pickCorners() {
+    const pool = RECOG_CORNERS.slice(), out = [];
+    for (let i = 0; i < 2; i++) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    return out.sort();
   }
 
-  // everything the chosen pieces' stickers say about the state — two states
-  // look identical through the view iff their signatures match
+  // everything the view's visible pieces say about the state — two states look
+  // identical through the view iff their signatures match. view = { centers,
+  // corners, fl } (fl: the whole D layer is visible).
   function viewSignature(st, view) {
     const parts = [];
+    if (view.fl) {
+      parts.push('flc' + st.ctr[FIDX.D]);
+      parts.push('flx' + st.fx[2] + st.fx[3]);
+      parts.push('flf' + st.fp[2] + '.' + st.fo[2] + ',' + st.fp[3] + '.' + st.fo[3]);
+    }
     for (const f of view.centers) parts.push('c' + f + st.ctr[FIDX[f]]);
     for (const c of view.corners) {
       if (c in AXIS_SLOT) parts.push('x' + c + st.fx[AXIS_SLOT[c]]);
@@ -418,13 +420,15 @@ export function createCore(E) {
   // display-space indices to HIDE so only the view's pieces stay visible
   function maskForView(st, view) {
     const visible = new Set();
-    for (const f of view.centers) visible.add(FIDX[f] * 5);
-    for (const c of view.corners) {
+    const addCorner = (c) => {
       for (const g of E.FACES) {
         const ix = E.STICKER_POS[g].indexOf(c);
         if (ix >= 0) visible.add(FIDX[g] * 5 + 1 + ix);
       }
-    }
+    };
+    if (view.fl) { visible.add(FIDX.D * 5); for (const c of FL_CORNERS) addCorner(c); }
+    for (const f of view.centers) visible.add(FIDX[f] * 5);
+    for (const c of view.corners) addCorner(c);
     const dmap = displayPosMap(st);
     const mask = new Set();
     for (let p = 0; p < 30; p++) if (!visible.has(p)) mask.add(dmap[p]);
@@ -436,7 +440,7 @@ export function createCore(E) {
     maskedScramble, randomReachable, descend, descentLines, toWCA,
     layerSolved, anyLayerSolved, layerSeedSpec, flSeedIndices, buildFLDist,
     analyze, lineLayerSplit,
-    pickView, viewSignature, maskForView, displayPosMap,
+    pickCorners, viewSignature, maskForView, displayPosMap,
     MASK_MIN, MASK_MAX, RECOG_CENTERS, RECOG_CORNERS,
   };
 }
