@@ -6,7 +6,8 @@ production. Edit here, rebuild, commit the regenerated `js/trainer.js`.
 
 ## Files
 - `skewb-trainer.jsx` — the trainer React component (UI + persistence): four
-  modes — Algorithm drill/recap, Full solve (timer + optimal-line/first-layer
+  modes, every case diagram drawn with the solved layer on the bottom (netSVG
+  `pinned`) — Algorithm drill/recap, Full solve (timer + optimal-line/first-layer
   analysis), Recognition (Full view: reveal + self-grade with per-case accuracy;
   Center-cases view: first layer + a chosen 3-center combo shown, optional 2
   random corners, multiple-choice over the sheet's center-case names +
@@ -18,7 +19,9 @@ production. Edit here, rebuild, commit the regenerated `js/trainer.js`.
   netSVG's `pinned` option — + best-effort case name).
 - `skewb-core.mjs` — the substrate, no React/DOM: case model over
   `data/skewb_algs.json` (fetched at runtime — NOT bundled), presentation
-  geometry (`prependAUF` direction synthesis), masked scrambles, the
+  geometry (`prependAUF` presentation synthesis — backs recognition's y²
+  flip and the one-look reverse lookup; the drill's user-facing view toggles
+  were removed), masked scrambles, the
   first-layer predicate + goal-distance BFS, analysis, one-look sampling
   (FL-distance fibers, D-layer states, fixed-solution preimages). Unit-tested
   from Node (`npm run test:trainer`), which is why it is a plain `.mjs` module.

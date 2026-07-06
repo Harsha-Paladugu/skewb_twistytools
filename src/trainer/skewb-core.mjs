@@ -428,30 +428,10 @@ export function createCore(E) {
     return parts.join('|');
   }
 
-  // Diagrams render through toFixedFacelets, which re-anchors the display by
-  // rotating 240°×fx[UFL] about the UFL–DBR diagonal — so a piece's RAW facelet
-  // positions and its DISPLAYED positions differ when fx[UFL] ≠ 0. Rebuild that
-  // rotation from exported members (mirrors engine.js ROT240_UFL: the deep-cut
-  // identity  written-B = native-UFL-move · rotation) and map positions through
-  // it; test-trainer pins this against toFixedFacelets on random states.
-  const _rot240 = (() => {
-    const inv = new Array(30);
-    for (let i = 0; i < 30; i++) inv[E.moveFaceletPerm.UFL[i]] = i;
-    const r = new Array(30);
-    for (let i = 0; i < 30; i++) r[i] = inv[E.WCA_FACELET_MOVES.B[i]];
-    return r;
-  })();
-  // rawPos -> displayed facelet index, for this state's display anchoring
-  function displayPosMap(st) {
-    const k = ((st.fx[AXIS_SLOT.UFL] % 3) + 3) % 3;
-    let Rk = Array.from({ length: 30 }, (_, i) => i);   // display[i] = raw[Rk[i]]
-    for (let t = 0; t < k; t++) Rk = _rot240.map((ri) => Rk[ri]);
-    const dmap = new Array(30);
-    for (let i = 0; i < 30; i++) dmap[Rk[i]] = i;
-    return dmap;
-  }
-
-  // display-space indices to HIDE so only the view's pieces stay visible
+  // facelet indices to HIDE so only the view's pieces stay visible. Trainer
+  // diagrams render in the engine's pinned frame (netSVG opts.pinned — solved
+  // layer stays visually on the bottom), so raw sticker positions ARE display
+  // positions and no re-anchor compensation is needed.
   function maskForView(st, view) {
     const visible = new Set();
     const addCorner = (c) => {
@@ -463,9 +443,8 @@ export function createCore(E) {
     if (view.fl) { visible.add(FIDX.D * 5); for (const c of FL_CORNERS) addCorner(c); }
     for (const f of view.centers) visible.add(FIDX[f] * 5);
     for (const c of view.corners) addCorner(c);
-    const dmap = displayPosMap(st);
     const mask = new Set();
-    for (let p = 0; p < 30; p++) if (!visible.has(p)) mask.add(dmap[p]);
+    for (let p = 0; p < 30; p++) if (!visible.has(p)) mask.add(p);
     return mask;
   }
 
@@ -475,7 +454,7 @@ export function createCore(E) {
     layerSolved, anyLayerSolved, layerSeedSpec, flSeedIndices, buildFLDist,
     analyze, lineLayerSplit,
     randomAtFLDist, randomDLayerState, preimageOfLayer,
-    pickCorners, viewSignature, maskForView, displayPosMap,
+    pickCorners, viewSignature, maskForView,
     MASK_MIN, MASK_MAX, RECOG_CENTERS, RECOG_CORNERS,
   };
 }

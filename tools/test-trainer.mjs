@@ -263,16 +263,8 @@ t('exports: DIRS/Y_PREFIX shapes', () =>
   DIRS.length === 4 && Y_PREFIX.length === 4 && Y_PREFIX[0] === '' && Y_PREFIX[2] === 'y2');
 
 // ---------------- partial (3+2) recognition ----------------
-t('displayPosMap: raw piece positions land where toFixedFacelets displays them', () => {
-  for (let i = 0; i < 50; i++) {
-    const st = core.randomReachable(dist);
-    const raw = E.toFacelets(st), disp = E.toFixedFacelets(st);
-    const dmap = core.displayPosMap(st);
-    for (let p = 0; p < 30; p++) if (disp[dmap[p]] !== raw[p]) return false;
-    if (new Set(dmap).size !== 30) return false;
-  }
-  return true;
-});
+// (masks are raw sticker indices: trainer diagrams render in the engine's
+// pinned frame — netSVG opts.pinned — so raw position == display position)
 t('pickCorners: 2 distinct upper corners', () => {
   for (let i = 0; i < 50; i++) {
     const v = core.pickCorners();
@@ -281,20 +273,18 @@ t('pickCorners: 2 distinct upper corners', () => {
   }
   return true;
 });
-t('maskForView: FL + 3 centers hides 14; +2 corners hides 8 (twisted-UFL states too)', () => {
+t('maskForView: FL + 3 centers hides 14; +2 corners hides 8', () => {
   const cases = model.subsets.flatMap((s) => s.cases);
-  let sawTwisted = false;
   for (let i = 0; i < 40; i++) {
     const st = core.stateForDir(cases[rndInt(cases.length)], rndInt(4));
-    if (st.fx[1] !== 0) sawTwisted = true;
     const v3 = { centers: ['U', 'F', 'L'], corners: [], fl: true };
     if (core.maskForView(st, v3).size !== 14) return false;
     const v5 = { centers: ['U', 'F', 'L'], corners: core.pickCorners(), fl: true };
     if (core.maskForView(st, v5).size !== 8) return false;
   }
-  return sawTwisted; // the display-rotation path must actually get exercised
+  return true;
 });
-t('maskForView: the visible stickers are exactly the view’s pieces’ stickers', () => {
+t('maskForView: the visible stickers are exactly the view’s pieces’ raw stickers', () => {
   const FIDX = Object.fromEntries(E.FACES.map((f, i) => [f, i]));
   const FL_CORNERS = ['DFR', 'DBL', 'DFL', 'DBR'];
   for (let i = 0; i < 30; i++) {
@@ -302,7 +292,6 @@ t('maskForView: the visible stickers are exactly the view’s pieces’ stickers
     const st = core.stateForDir(c, rndInt(4));
     const view = { centers: ['R', 'B', 'U'], corners: core.pickCorners(), fl: true };
     const mask = core.maskForView(st, view);
-    const dmap = core.displayPosMap(st);
     const rawVisible = new Set([FIDX.D * 5]);
     for (const f of view.centers) rawVisible.add(FIDX[f] * 5);
     for (const k of [...view.corners, ...FL_CORNERS]) for (const g of E.FACES) {
@@ -310,7 +299,7 @@ t('maskForView: the visible stickers are exactly the view’s pieces’ stickers
       if (ix >= 0) rawVisible.add(FIDX[g] * 5 + 1 + ix);
     }
     for (let p = 0; p < 30; p++) {
-      if (rawVisible.has(p) === mask.has(dmap[p])) return false; // visible <-> not masked
+      if (rawVisible.has(p) === mask.has(p)) return false; // visible <-> not masked
     }
   }
   return true;

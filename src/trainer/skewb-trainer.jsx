@@ -86,9 +86,8 @@ export default function SkewbTrainer() {
   // ---------- selection (defaults resolve lazily against the model) ----------
   const [subsetSel, setSubsetSel] = useState(null);   // null = default (first subset)
   const [groupSel, setGroupSel] = useState({});       // subset -> enabled group values (missing = all)
-  const [dirSel, setDirSel] = useState({});           // subset -> enabled dir indices (missing = [0] Front)
   const [caseOff, setCaseOff] = useState(() => new Set());   // DISABLED case uids
-  const [caseKnown, setCaseKnown] = useState(() => new Set()); // KNOWN uid␟dir
+  const [caseKnown, setCaseKnown] = useState(() => new Set()); // KNOWN uid␟0 (dir dimension retired)
   const [scope, setScope] = useState("all");
   const [mode, setMode] = useState("drill");
   const [setupOpen, setSetupOpen] = useState(true);
@@ -103,7 +102,6 @@ export default function SkewbTrainer() {
     const sel = groupSel[sub.key];
     return sel === undefined ? sub.groups.map((g) => g.value) : sel;
   }, [groupSel]);
-  const dirsOf = useCallback((key) => dirSel[key] === undefined ? [0] : dirSel[key], [dirSel]);
 
   // ---------- run state ----------
   const [current, setCurrent] = useState(null);
@@ -147,11 +145,6 @@ export default function SkewbTrainer() {
           if (d && typeof d === "object") {
             if (Array.isArray(d.subsetSel)) setSubsetSel(d.subsetSel.filter((k) => typeof k === "string"));
             if (d.groupSel && typeof d.groupSel === "object") setGroupSel(d.groupSel);
-            if (d.dirSel && typeof d.dirSel === "object") {
-              const v = {};
-              for (const [k, arr] of Object.entries(d.dirSel)) if (Array.isArray(arr)) v[k] = arr.filter((x) => x >= 0 && x <= 3);
-              setDirSel(v);
-            }
             if (Array.isArray(d.caseOff)) setCaseOff(new Set(d.caseOff.filter((x) => typeof x === "string")));
             if (Array.isArray(d.caseKnown)) setCaseKnown(new Set(d.caseKnown.filter((x) => typeof x === "string")));
             if (["all", "learning", "known"].includes(d.scope)) setScope(d.scope);
@@ -237,50 +230,46 @@ export default function SkewbTrainer() {
   const persist = useCallback((over) => {
     try {
       window.storage.set(STORE_KEY, JSON.stringify({
-        subsetSel, groupSel, dirSel, caseOff: [...caseOff], caseKnown: [...caseKnown],
+        subsetSel, groupSel, caseOff: [...caseOff], caseKnown: [...caseKnown],
         scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn,
         onelookView, onelookLen, onelookSol, onelookStats, ...over,
       })).catch(() => {});
     } catch (e) {}
-  }, [subsetSel, groupSel, dirSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn, onelookView, onelookLen, onelookSol, onelookStats]);
+  }, [subsetSel, groupSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn, onelookView, onelookLen, onelookSol, onelookStats]);
   useEffect(() => {
     if (!loadedStore.current) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(persist, 400);
   }, [persist]);
 
-  // ---------- the practice pool: enabled (case × direction) entries ----------
+  // ---------- the practice pool: enabled cases (authored presentation only) ----------
   const entries = useMemo(() => {
     if (!ready) return [];
     const out = [];
     for (const sub of model().subsets) {
       if (!subsetOn(sub.key)) continue;
-      const dirs = dirsOf(sub.key);
-      if (!dirs.length) continue;
       const on = new Set(groupsOf(sub));
       for (const g of sub.groups) {
         if (!on.has(g.value)) continue;
         for (const c of g.cases) {
           if (caseOff.has(c.uid)) continue;
-          for (const d of dirs) {
-            const kn = caseKnown.has(knownKey(c.uid, d));
-            if (scope === "learning" && kn) continue;
-            if (scope === "known" && !kn) continue;
-            out.push({ c, d, subset: sub.key });
-          }
+          const kn = caseKnown.has(knownKey(c.uid, 0));
+          if (scope === "learning" && kn) continue;
+          if (scope === "known" && !kn) continue;
+          out.push({ c, subset: sub.key });
         }
       }
     }
     return out;
-  }, [ready, subsetOn, groupsOf, dirsOf, caseOff, caseKnown, scope]);
+  }, [ready, subsetOn, groupsOf, caseOff, caseKnown, scope]);
 
   // ---------- problem generation ----------
   const makeDrill = useCallback((entry) => {
-    const target = core.stateForDir(entry.c, entry.d);
+    const target = core.stateForDir(entry.c, 0);
     if (!target) return null;
     const scramble = core.maskedScramble(target, distRef.current);
     if (!scramble) return null;
-    return { kind: "drill", c: entry.c, d: entry.d, subset: entry.subset, state: target, scramble };
+    return { kind: "drill", c: entry.c, d: 0, subset: entry.subset, state: target, scramble };
   }, []);
 
   const nextDrill = useCallback(() => {
@@ -319,7 +308,7 @@ export default function SkewbTrainer() {
     const pool = recogView === "centers" ? quizEntries : entries;
     if (!pool.length || (recogView === "centers" && centerSel.length !== 3)) { setCurrent(null); return; }
     const e2 = pool[Math.floor(Math.random() * pool.length)];
-    const d = (e2.d + (Math.random() < 0.5 ? 2 : 0)) % 4; // coin-flip y² view (same canon)
+    const d = Math.random() < 0.5 ? 2 : 0; // coin-flip y² view (same canon)
     const state = core.stateForDir(e2.c, d);
     if (!state) { setCurrent(null); return; }
     const cur = { kind: "recog", c: e2.c, d, subset: e2.subset, state };
@@ -340,7 +329,7 @@ export default function SkewbTrainer() {
     for (const en of quizEntries) {
       const a = answerOf(en.c);
       if (a === shown.answerKey) continue;
-      for (const dd of [en.d, (en.d + 2) % 4]) {
+      for (const dd of [0, 2]) {
         const st = core.stateForDir(en.c, dd);
         if (st && core.viewSignature(st, shown.view) === target) { others.add(a); break; }
       }
@@ -657,17 +646,13 @@ export default function SkewbTrainer() {
     const cur = groupsOf(sub);
     setGroupSel((s) => ({ ...s, [sub.key]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] }));
   };
-  const toggleDir = (key, d) => {
-    const cur = dirsOf(key);
-    setDirSel((s) => ({ ...s, [key]: cur.includes(d) ? cur.filter((v) => v !== d) : [...cur, d].sort() }));
-  };
   const toggleCase = (uid) =>
     setCaseOff((s) => { const n = new Set(s); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
-  const toggleKnownAt = (uid, dirs) =>
+  const toggleKnown = (uid) =>
     setCaseKnown((s) => {
       const n = new Set(s);
-      const all = dirs.every((d) => n.has(knownKey(uid, d)));
-      for (const d of dirs) { const k = knownKey(uid, d); if (all) n.delete(k); else n.add(k); }
+      const k = knownKey(uid, 0);
+      if (n.has(k)) n.delete(k); else n.add(k);
       return n;
     });
 
@@ -682,11 +667,7 @@ export default function SkewbTrainer() {
     for (const g of sub.groups) if (on.has(g.value)) for (const c of g.cases) { total++; if (caseOff.has(c.uid)) off++; }
     return { on: total - off, total };
   };
-  const knownCount = (sub) => {
-    const dirs = dirsOf(sub.key);
-    if (!dirs.length) return 0;
-    return sub.cases.filter((c) => dirs.every((d) => caseKnown.has(knownKey(c.uid, d)))).length;
-  };
+  const knownCount = (sub) => sub.cases.filter((c) => caseKnown.has(knownKey(c.uid, 0))).length;
 
   // ---------- stats aggregation ----------
   const uidIndex = useMemo(() => {
@@ -750,7 +731,6 @@ export default function SkewbTrainer() {
     const [filter, setFilter] = useState("");
     if (!sub) return null;
     const g = sub.groups.find((x) => x.value === grp) || sub.groups[0];
-    const dirs = dirsOf(sub.key);
     const filterField = sub.nav && sub.nav.filter && sub.nav.filter.field;
     const filterVals = filterField ? [...new Set(g.cases.map((c) => c[filterField]).filter((v) => v != null))] : [];
     let list = core.navSorted(sub, g.cases);
@@ -780,18 +760,15 @@ export default function SkewbTrainer() {
               </select>
             )}
           </div>
-          <div className="hint" style={{ textAlign: "left", margin: "0 0 8px" }}>
-            known is per direction · editing: {dirs.length ? dirs.map((d) => DIRS[d]).join(", ") : "(no direction selected)"}
-          </div>
           <div className="presets" style={{ margin: "0 0 10px" }}>
             <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.delete(c.uid); return n; })}>enable shown</button>
             <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.add(c.uid); return n; })}>disable shown</button>
-            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) for (const d of dirs) n.add(knownKey(c.uid, d)); return n; })}>mark shown known</button>
-            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) for (const d of dirs) n.delete(knownKey(c.uid, d)); return n; })}>mark shown unknown</button>
+            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.add(knownKey(c.uid, 0)); return n; })}>mark shown known</button>
+            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.delete(knownKey(c.uid, 0)); return n; })}>mark shown unknown</button>
           </div>
           <div className="chips">
             {list.map((c) => {
-              const kn = dirs.length > 0 && dirs.every((d) => caseKnown.has(knownKey(c.uid, d)));
+              const kn = caseKnown.has(knownKey(c.uid, 0));
               return (
                 <span key={c.uid} className="markwrap">
                   <button className={"chip" + (caseOff.has(c.uid) ? "" : " on")}
@@ -799,7 +776,7 @@ export default function SkewbTrainer() {
                     <span className="dot" />{c.name}{kn ? " ✓" : ""}
                   </button>
                   <button className={"markbtn ok" + (kn ? " sel" : "")} title="mark known"
-                    onClick={() => toggleKnownAt(c.uid, dirs)}>K</button>
+                    onClick={() => toggleKnown(c.uid)}>K</button>
                 </span>
               );
             })}
@@ -930,7 +907,7 @@ export default function SkewbTrainer() {
               <button className="setuphead" onClick={() => setSetupOpen((o) => !o)}>
                 <strong>Setup</strong>
                 <span className="setupsum">
-                  {ready ? `${entries.length} case view${entries.length === 1 ? "" : "s"} in the pool` : "loading…"}
+                  {ready ? `${entries.length} case${entries.length === 1 ? "" : "s"} in the pool` : "loading…"}
                 </span>
                 <span className="chev">{setupOpen ? "▾" : "▸"}</span>
               </button>
@@ -957,13 +934,6 @@ export default function SkewbTrainer() {
                         ))}
                       </div>
                       <div className="chips">
-                        <span className="grouplabel">view</span>
-                        <div className="modes">
-                          {DIRS.map((label, d) => (
-                            <button key={d} className={"mode" + (dirsOf(sub.key).includes(d) ? " on" : "")}
-                              onClick={() => toggleDir(sub.key, d)}>{label}</button>
-                          ))}
-                        </div>
                         <button className="preset" onClick={() => setCaseBrowser(sub.key)}>cases…</button>
                       </div>
                     </details>
@@ -994,7 +964,7 @@ export default function SkewbTrainer() {
         ) : recapDone ? (
           <div className="stage" style={{ cursor: "default", textAlign: "center" }}>
             <div className="scramble" style={{ textAlign: "center" }}>Recap complete</div>
-            <div className="hint" style={{ marginTop: 10 }}>{recap.queue.length} case views covered</div>
+            <div className="hint" style={{ marginTop: 10 }}>{recap.queue.length} cases covered</div>
             <button className="restart" onClick={startRecap}>Run it again</button>
           </div>
         ) : mode === "onelook" && !current ? (
@@ -1012,9 +982,9 @@ export default function SkewbTrainer() {
           <div className="stage" style={{ cursor: "default" }}>
             <div className="empty" style={{ padding: "40px 0", textAlign: "center" }}>
               {entries.length === 0
-                ? (scope === "learning" ? "Nothing left to learn in this selection — every enabled case view is marked known."
-                  : scope === "known" ? "No case views marked known yet in this selection."
-                  : "Pick at least one subset, group and view in Setup to start.")
+                ? (scope === "learning" ? "Nothing left to learn in this selection — every enabled case is marked known."
+                  : scope === "known" ? "No cases marked known yet in this selection."
+                  : "Pick at least one subset and group in Setup to start.")
                 : "Couldn’t generate a scramble — try other cases."}
             </div>
           </div>
@@ -1022,7 +992,7 @@ export default function SkewbTrainer() {
           <div className="stage" style={{ cursor: "default" }}>
             <div className="stagegrid recogstage">
               <Net state={phase === "stopped" && last ? last.state : current.state} w={300}
-                mask={phase === "stopped" ? null : current.mask} />
+                mask={phase === "stopped" ? null : current.mask} pinned />
             </div>
             {current.view && phase !== "stopped" && (
               <div className="hint" style={{ marginTop: 6 }}>
@@ -1041,7 +1011,7 @@ export default function SkewbTrainer() {
                     <span className="dot" />{last.subset}
                   </span>
                   <span className="casename">{last.c.name}</span>
-                  <span className="bartag">{DIRS[last.d]} view</span>
+                  {last.d ? <span className="bartag">{DIRS[last.d]} view</span> : null}
                   <span className="mono">{fmt(last.ms)}s</span>
                   <button className="restart" style={{ marginTop: 0 }} onClick={nextRecog}>Next (space)</button>
                 </div>
@@ -1059,7 +1029,7 @@ export default function SkewbTrainer() {
                     <span className="dot" />{last.subset}
                   </span>
                   <span className="casename">{last.c.name}</span>
-                  <span className="bartag">{DIRS[last.d]} view</span>
+                  {last.d ? <span className="bartag">{DIRS[last.d]} view</span> : null}
                   <span className="mono">{fmt(last.ms)}s</span>
                 </div>
                 <div className="graderow">
@@ -1143,7 +1113,7 @@ export default function SkewbTrainer() {
                             <span className="dot" />{last.match.subset}
                           </span>
                           <span className="casename">{last.match.c.name}</span>
-                          <span className="bartag">{DIRS[last.match.d]} view</span>
+                          {last.match.d ? <span className="bartag">{DIRS[last.match.d]} view</span> : null}
                         </>
                       ) : (
                         <span className="casename">not in your sheets</span>
@@ -1205,7 +1175,8 @@ export default function SkewbTrainer() {
           <div className="stage" onPointerDown={(e) => { e.preventDefault(); trigger(); }}>
             <div className="stagegrid">
               <div className="scramble">{dispAlg(current.scramble)}</div>
-              <Net state={current.state} w={240} />
+              {/* the case diagram renders layer-down (pinned frame) */}
+              <Net state={current.state} w={240} pinned />
             </div>
             <div className={"timer" + (phase === "running" ? " running" : "")}>{fmt(elapsed)}</div>
             {phase === "stopped" && last && last.kind === "drill" ? (
@@ -1214,7 +1185,6 @@ export default function SkewbTrainer() {
                   <span className="dot" />{last.subset}
                 </span>
                 <span className="casename">{last.c.name}</span>
-                <span className="bartag">{DIRS[last.d]}</span>
                 {(() => {
                   const k = knownKey(last.c.uid, last.d);
                   const isK = caseKnown.has(k);
@@ -1346,7 +1316,7 @@ export default function SkewbTrainer() {
                             const c = uidIndex.get(uid);
                             return (
                               <div key={uid} className="casecard">
-                                {c ? <Net state={core.stateForDir(c, 0)} w={120} /> : null}
+                                {c ? <Net state={core.stateForDir(c, 0)} w={120} pinned /> : null}
                                 <div className="casenums">
                                   <span className="mono" style={{ color: "var(--red)" }}>{s.n - s.hit}✗</span>
                                   <span className="casesub">{s.name}</span>
@@ -1363,12 +1333,12 @@ export default function SkewbTrainer() {
               </>
             ) : (
               <>
-                <h3>Stats by variant</h3>
+                <h3>Drill stats</h3>
                 {Object.keys(variantAgg).length === 0 ? (
-                  <div className="empty">No solves yet. Times land here, grouped by subset and view.</div>
+                  <div className="empty">No solves yet. Times land here, grouped by subset.</div>
                 ) : (
                   <table>
-                    <thead><tr><th>Variant</th><th>Solves</th><th>Cases seen</th><th>Best</th><th>Mean</th></tr></thead>
+                    <thead><tr><th>Subset</th><th>Solves</th><th>Cases seen</th><th>Best</th><th>Mean</th></tr></thead>
                     <tbody>
                       {Object.keys(variantAgg).sort().map((vk) => {
                         const a = variantAgg[vk];
@@ -1376,7 +1346,7 @@ export default function SkewbTrainer() {
                           <tr key={vk} className="setrow" onClick={() => setExpandedVariant(expandedVariant === vk ? null : vk)}>
                             <td className="name">
                               <span className="dot" style={{ background: subColor(a.subset) }} />
-                              {a.subset} · {DIRS[a.d]}
+                              {a.subset}{a.d ? " · " + DIRS[a.d] : ""}
                               <span className="chev">{expandedVariant === vk ? "▾" : "▸"}</span>
                             </td>
                             <td className="mono">{a.n}</td>
@@ -1399,7 +1369,7 @@ export default function SkewbTrainer() {
                         const c = uidIndex.get(uid);
                         return (
                           <div key={k} className="casecard">
-                            {c ? <Net state={core.stateForDir(c, st.d)} w={120} /> : null}
+                            {c ? <Net state={core.stateForDir(c, st.d)} w={120} pinned /> : null}
                             <div className="casenums">
                               <span className="mono">{fmt(st.sum / st.n)}</span>
                               <span className="casesub">{st.name}</span>

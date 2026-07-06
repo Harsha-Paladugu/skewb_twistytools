@@ -260,6 +260,22 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     `randomAtFLDist` / `randomDLayerState` / `preimageOfLayer`; substrate tests
     29 → 33; storage blob gains `onelookView`/`onelookLen`/`onelookSol`/
     `onelookStats` (mode whitelist + hydration + reset extended).
+  - **2026-07-06 follow-up (USER request): layer-down diagrams everywhere +
+    view feature removed.** ALL trainer case diagrams (drill stage, recognition
+    full view + center quiz + stats thumbnails, one-look reveal) now render
+    `pinned` so the solved layer always reads on the bottom; only the
+    scramble-state diagrams (full solve, one-look stage) keep the WCA-hold
+    default. The quiz masks are therefore raw sticker indices — core
+    `displayPosMap`/`_rot240` (the re-anchor compensation) DELETED with their
+    test (substrate tests 33 → 32). The drill's per-subset Front/Right/Back/
+    Left view toggles are REMOVED (user: "the view is not important"): the
+    pool is cases at the authored presentation only, known-marks and stats key
+    at direction 0 (old `uid␟0` data stays valid; stray non-zero rows still
+    display with a direction suffix), `dirSel` dropped from the storage blob.
+    Recognition keeps its y² coin-flip (canon-equivalent angle variety; the
+    "Back view" tag shows only on flips), and the core's 4-presentation
+    keying machinery (`casePres`/`stateForDir`/`prependAUF`) stays — it backs
+    recognition, alg y-chips, and the one-look reverse lookup.
 - [ ] **M7 — Solver.** New `METHOD_DEFS`/`METHOD_PRIORITY` in solver-core (proposal to
   confirm with user: `fl` first layer cap 7, `flm1` FL−1 cap 5, `psfl` pseudo-FL; targets
   from `enumFreeSlots` pools; frames go 12→24? NO — frames stay the engine's `makeFrames`;
