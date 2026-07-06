@@ -13,7 +13,7 @@
     "setup_moves": "leading bracketed tokens e.g. [y2] are kept inline and also exposed as 'setup'",
     "status": "TCLL / EG2 / NS imported from data/sources/*.json (NS-notation sources converted to WCA; originals kept per-alg as `ns`; sheet rotation letters x/y/z = engine z'/y'/x — see the importer header). FL / Sarah-Intermediate / Sarah-Advanced await authoring.",
     "counts": {
-      "cases": 1349,
+      "cases": 1351,
       "algs": 3116
     }
   },
@@ -21024,8 +21024,8 @@
           "algs": [
             {
               "direction": "Front",
-              "alg": "R' B U U' R U B L' U",
-              "ns": "x B' b B B' z r R r R' r",
+              "alg": "R' B U L' B L R L' B",
+              "ns": "x B' b B b' z r R r R' r",
               "rating": "neutral",
               "firstMove": "B'"
             }
@@ -30374,14 +30374,6 @@
               "ns": "x z r R r R' z2 R r' R' r B",
               "rating": "neutral",
               "firstMove": "R"
-            },
-            {
-              "direction": "Front",
-              "alg": "B L' U' R U' R' U'",
-              "ns": "x z2 b R' r' b r2 R' r'",
-              "rating": "neutral",
-              "firstMove": "R",
-              "suspect": true
             }
           ],
           "corner": "SS",
@@ -31216,7 +31208,7 @@
           "center": "X2"
         },
         {
-          "name": "SS+ BR W1",
+          "name": "SS+ BR W2",
           "section": "Spaceship+",
           "algs": [
             {
@@ -31232,22 +31224,31 @@
               "ns": "x z R r' R' B r' R' r b' B r' R'",
               "rating": "neutral",
               "firstMove": "B"
-            },
+            }
+          ],
+          "corner": "SS",
+          "cornerName": "Spaceship",
+          "sign": "+",
+          "id": "BR",
+          "center": "W2"
+        },
+        {
+          "name": "SS+ BR W1",
+          "section": "Spaceship+",
+          "algs": [
             {
               "direction": "Front",
               "alg": "L B' U' B' L B R B'",
               "ns": "x z b B' b' r' B r B r'",
               "rating": "neutral",
-              "firstMove": "r",
-              "suspect": true
+              "firstMove": "r"
             },
             {
               "direction": "Front",
               "alg": "B U R' B R U' L' U' B' L",
               "ns": "x z2 b r R' B R r' R' r' R' b",
               "rating": "neutral",
-              "firstMove": "R",
-              "suspect": true
+              "firstMove": "R"
             }
           ],
           "corner": "SS",
@@ -31344,6 +31345,24 @@
           "sign": "+",
           "id": "BL",
           "center": "O1"
+        },
+        {
+          "name": "SS+ BL O2",
+          "section": "Spaceship+",
+          "algs": [
+            {
+              "direction": "Front",
+              "alg": "B L' U' R U' R' U'",
+              "ns": "x z2 b R' r' b r2 R' r'",
+              "rating": "neutral",
+              "firstMove": "R"
+            }
+          ],
+          "corner": "SS",
+          "cornerName": "Spaceship",
+          "sign": "+",
+          "id": "BL",
+          "center": "O2"
         },
         {
           "name": "SS+ BL ZC1",

@@ -8724,7 +8724,7 @@
       "algs": [
         {
           "firstMove": null,
-          "alg": "x B' b B B' z r R r R' r",
+          "alg": "x B' b B b' z r R r R' r",
           "rating": "neutral"
         }
       ]
@@ -17082,8 +17082,8 @@
       "cornerName": "Spaceship",
       "sign": "+",
       "id": "BR",
-      "center": "W1",
-      "name": "SS+ BR W1",
+      "center": "W2",
+      "name": "SS+ BR W2",
       "algs": [
         {
           "firstMove": null,
@@ -17191,9 +17191,9 @@
       "corner": "SS",
       "cornerName": "Spaceship",
       "sign": "+",
-      "id": "FR",
-      "center": "O1",
-      "name": "SS+ FR O1",
+      "id": "BL",
+      "center": "O2",
+      "name": "SS+ BL O2",
       "algs": [
         {
           "firstMove": null,
