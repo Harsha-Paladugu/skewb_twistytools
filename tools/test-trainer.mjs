@@ -187,6 +187,46 @@ t('descend(fldist) reaches a layer-solved state in exactly fldist moves', () => 
   return true;
 });
 
+// ---------------- one-look ----------------
+t('one-look: randomAtFLDist lands on the exact FL distance for every n 0..6', () => {
+  for (let n = 0; n <= 6; n++) {
+    const st = core.randomAtFLDist(fldist, n);
+    if (!st || fldist[E.idx(st)] !== n || dist[E.idx(st)] < 0) return false;
+  }
+  return true;
+});
+t('one-look: randomDLayerState samples reachable D-layer-solved states', () => {
+  for (let i = 0; i < 20; i++) {
+    const st = core.randomDLayerState();
+    if (!core.layerSolved(st, 'D') || dist[E.idx(st)] < 0) return false;
+  }
+  return true;
+});
+t('one-look: running the sequence from the preimage lands EXACTLY on Y (incl. B + rotations)', () => {
+  const SEQS = ["R U' B", "y R L' B U", "B L B' U'", "x2 R U R'", "R'", "L U L' U' B", "R R'"];
+  for (const s of SEQS) {
+    const A = applyWca(s, E.solved());
+    for (let i = 0; i < 3; i++) {
+      const Y = core.randomDLayerState();
+      const X = core.preimageOfLayer(A, Y, dist);
+      if (!X) return false;
+      const Z = applyWca(s, E.copy(X));
+      if (!E.eq(Z, Y) || !core.layerSolved(Z, 'D')) return false;
+      const scr = core.maskedScramble(X, dist); // the shown scramble reproduces X ('' ok iff X = solved)
+      if (scr == null || !E.eq(applyWca(scr || "R R'", E.solved()), X)) return false;
+    }
+  }
+  return true;
+});
+t('one-look: preimage honors NS-notation sequences', () => {
+  const raw = "R' b R F"; // NS letters (upper = U-layer corners, lower = D-layer)
+  const applyNs = (a, st) => E.applyParsed(E.parseAlg(E.preprocessAlg(a), 'ns'), st, null, E.makeFrames());
+  const A = applyNs(raw, E.solved());
+  const Y = core.randomDLayerState();
+  const X = core.preimageOfLayer(A, Y, dist);
+  return !!X && E.eq(applyNs(raw, E.copy(X)), Y);
+});
+
 // ---------------- analysis ----------------
 t('analyze: direct lines solve; method = FL then finish, total ≥ direct', () => {
   for (let i = 0; i < 6; i++) {

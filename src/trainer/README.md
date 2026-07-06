@@ -5,17 +5,22 @@ deployed trainer**. It builds to `js/trainer.js`, which `trainer.html` serves in
 production. Edit here, rebuild, commit the regenerated `js/trainer.js`.
 
 ## Files
-- `skewb-trainer.jsx` — the trainer React component (UI + persistence): three
+- `skewb-trainer.jsx` — the trainer React component (UI + persistence): four
   modes — Algorithm drill/recap, Full solve (timer + optimal-line/first-layer
   analysis), Recognition (Full view: reveal + self-grade with per-case accuracy;
   Center-cases view: first layer + a chosen 3-center combo shown, optional 2
   random corners, multiple-choice over the sheet's center-case names +
-  Don't know, auto-graded per-center-case accuracy).
+  Don't know, auto-graded per-center-case accuracy), One-look (self-graded
+  case prediction in inspection: Random — scrambles whose nearest layer is
+  exactly N moves away, reveal lists the optimal layer lines; My solution —
+  enter a fixed layer solution and get scrambles it solves the bottom layer
+  on, reveal shows the exact post-layer state + best-effort case name).
 - `skewb-core.mjs` — the substrate, no React/DOM: case model over
   `data/skewb_algs.json` (fetched at runtime — NOT bundled), presentation
   geometry (`prependAUF` direction synthesis), masked scrambles, the
-  first-layer predicate + goal-distance BFS, analysis. Unit-tested from Node
-  (`npm run test:trainer`), which is why it is a plain `.mjs` module.
+  first-layer predicate + goal-distance BFS, analysis, one-look sampling
+  (FL-distance fibers, D-layer states, fixed-solution preimages). Unit-tested
+  from Node (`npm run test:trainer`), which is why it is a plain `.mjs` module.
 - `index.jsx` — entry point: mounts `<SkewbTrainer/>` at `#root`, provides a
   localStorage fallback for `window.storage`.
 
@@ -43,8 +48,8 @@ without touching real progress, use a private window. Commit the regenerated
   before the bundle: diagrams render through `window.OORender` and the
   scramble distance table comes from `window.OOTables.loadOrBuildDist`
   (IndexedDB `skewbiks-oo`/`oo-dist-v1`, shared with the census — first-ever
-  build ~18 s, instant thereafter). The full-solve first-layer table is built
-  lazily on first use and cached under `trainer-fldist-v1`.
+  build ~18 s, instant thereafter). The first-layer table (Full solve analysis
+  + One-look) is built lazily on first use and cached under `trainer-fldist-v1`.
 - Styling comes from `css/site.css` + `css/trainer.css` (the same files the
   live page loads); the component carries no inline `<style>`. New
   trainer-only classes live in `css/trainer.css`.

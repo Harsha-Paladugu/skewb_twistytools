@@ -359,6 +359,40 @@ export function createCore(E) {
     return null;
   }
 
+  // ---------- one-look ----------
+  // "Layer length" problems: a uniform state whose nearest layer (any face)
+  // is exactly n moves away — rejection over the slot range. The thinnest
+  // fibers (n=0 and n=6) are still ~1 in 2100 slots, so the cap is generous.
+  function randomAtFLDist(fldist, n) {
+    for (let t = 0; t < 4000000; t++) {
+      const ix = Math.floor(Math.random() * NSLOTS);
+      if (fldist[ix] === n) return E.unidx(ix);
+    }
+    return null;
+  }
+
+  // "Fixed layer solution" problems. The move action on states is simply
+  // transitive, so for a user sequence S (given as the state A = S applied to
+  // solved) any native realization β of A⁻¹ (a descent of A to solved) makes
+  // "S after β" the identity: X = β(Y) is the unique state from which running
+  // S lands EXACTLY on Y. Pick Y among the 540 D-layer-solved states and the
+  // case left after the user's layer IS Y — engine-tested in test-trainer.
+  let dSeedIdx = null;
+  function randomDLayerState() {
+    if (!dSeedIdx) {
+      dSeedIdx = [];
+      for (const st of E.enumFreeSlots(layerSeedSpec('D'))) dSeedIdx.push(E.idx(st));
+    }
+    return E.unidx(dSeedIdx[Math.floor(Math.random() * dSeedIdx.length)]);
+  }
+  function preimageOfLayer(A, Y, dist) {
+    const sol = descend(A, dist); // β: native moves taking A to solved
+    if (!sol) return null;
+    const X = E.copy(Y);
+    for (const mi of sol.moves) E.applyMoveIdx(X, mi);
+    return X;
+  }
+
   // ---------- partial-view recognition (center-case quiz) ----------
   // A case's non-FL pieces: the 5 centers off the solved layer (FL = D in every
   // case state; y presentations keep it there) and the 4 upper corner slots.
@@ -440,6 +474,7 @@ export function createCore(E) {
     maskedScramble, randomReachable, descend, descentLines, toWCA,
     layerSolved, anyLayerSolved, layerSeedSpec, flSeedIndices, buildFLDist,
     analyze, lineLayerSplit,
+    randomAtFLDist, randomDLayerState, preimageOfLayer,
     pickCorners, viewSignature, maskForView, displayPosMap,
     MASK_MIN, MASK_MAX, RECOG_CENTERS, RECOG_CORNERS,
   };

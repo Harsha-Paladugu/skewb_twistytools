@@ -200,6 +200,13 @@ td .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; ma
 .setgrp[open] > summary::before { content: "\25BE"; }
 .setgrp > summary .ct { color: var(--dimc); font: 500 11px var(--monof); }
 
+/* one-look: the layer-solution input */
+.solinput { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
+  color: var(--txt); padding: .4em .7em; font-size: 13px; min-width: 200px; outline: none; }
+.solinput::placeholder { color: var(--dimc); }
+.solinput:focus { border-color: var(--yellow); }
+.solerr { color: var(--red); font-size: 12.5px; }
+
 /* full-solve analysis: optimal-line pills + first-layer decomposition */
 .analysis { margin-top: 8px; cursor: default; }
 .solhead { text-align: center; color: var(--dimc); font-size: 11.5px; text-transform: uppercase;

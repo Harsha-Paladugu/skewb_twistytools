@@ -230,6 +230,31 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
   `check:fresh` green, engine tests 48/48 untouched, headless-Edge E2E
   (playwright-core, channel msedge, real waits) drives all three modes end-to-end —
   including a scramble-reproduces-the-shown-diagram check and reload persistence.
+  - **2026-07-06 follow-up (USER request): mode ④ One-look** — self-graded case
+    prediction during inspection (Got it ✓ key 1 / Missed ✗ key 2, space = reveal/
+    next, reveal shows time-to-reveal; per-setting accuracy in `onelookStats`,
+    session pills carry ✓/✗). Two sub-views: **Random** — a uniform state whose
+    nearest layer (any face) is EXACTLY the chosen N ∈ 0..6 moves away (rejection
+    sampling on the `trainer-fldist-v1` fiber; machine-checked histogram over the
+    3,149,280 reachable states: 3,110 / 24,880 / 133,152 / 666,904 / 1,675,934 /
+    640,870 / 4,430 for N = 0..6, so the thinnest fiber is ~1 in 2,100 slots —
+    the fldist table now builds lazily for One-look too, not just Full solve);
+    reveal lists every optimal FL line (≤128; a hit cap renders "+N+ more" —
+    the deepest states top out at ~88 lines) with its landing face. **My
+    solution** — the user enters a fixed layer solution (parsed in the active
+    WCA/NS notation, stored verbatim `{raw, nota}` so later toggle flips can't
+    reinterpret the letters); scrambles are exact preimages: A = the sequence's
+    effect-state from solved, β = a randomized-optimal native descent of A (the
+    engine-safe inverse — `invertAlg` text inversion is NOT valid across
+    applyParsed evaluations for B/rotation algs), X = β(Y) for a uniform Y among
+    the 540 D-layer-solved states, and by simple transitivity running the
+    sequence from X lands EXACTLY on Y (test-asserted incl. B/rotation/NS
+    sequences); reveal shows Y's diagram + a best-effort case name via a lazy
+    stateKey index over every sheet case's 4 presentation states ("not in your
+    sheets" on a miss — grading stays the user's). New core exports
+    `randomAtFLDist` / `randomDLayerState` / `preimageOfLayer`; substrate tests
+    29 → 33; storage blob gains `onelookView`/`onelookLen`/`onelookSol`/
+    `onelookStats` (mode whitelist + hydration + reset extended).
 - [ ] **M7 — Solver.** New `METHOD_DEFS`/`METHOD_PRIORITY` in solver-core (proposal to
   confirm with user: `fl` first layer cap 7, `flm1` FL−1 cap 5, `psfl` pseudo-FL; targets
   from `enumFreeSlots` pools; frames go 12→24? NO — frames stay the engine's `makeFrames`;

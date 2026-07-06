@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { createCore, DIRS, Y_PREFIX, SEP, rateRank } from "./skewb-core.mjs";
 
 // ============================================================
-// Skewbiks trainer — three tools over the imported method sheets
+// Skewbiks trainer — four tools over the imported method sheets
 //   Algorithm (drill / recap): masked scrambles onto sheet cases
 //   Full solve: timer + optimal-line / first-layer analysis
 //   Recognition: name the case from the diagram, self-graded
+//   One-look: predict the case in inspection — random N-move
+//   layers, or scrambles built for a fixed layer solution
 // ============================================================
 
 // ---------- shared site layers (loaded by trainer.html before this bundle) ----------
@@ -114,6 +116,12 @@ export default function SkewbTrainer() {
   const [recogView, setRecogView] = useState("full");   // 'full' | 'centers'
   const [centerSel, setCenterSel] = useState(["U", "F", "L"]); // the chosen 3-center combo (in pick order)
   const [cornersOn, setCornersOn] = useState(false);    // also show 2 random U-layer corners
+  const [onelookView, setOnelookView] = useState("len"); // 'len' (random N-move layer) | 'sol' (fixed layer solution)
+  const [onelookLen, setOnelookLen] = useState(3);       // moves to the nearest layer (0..6)
+  const [onelookSol, setOnelookSol] = useState(null);    // {raw, nota} — the user's layer solution, verbatim
+  const [onelookStats, setOnelookStats] = useState({});  // key -> {label, n, hit, sum(ms)}
+  const [solDraft, setSolDraft] = useState("");          // solution input draft (not persisted)
+  const [solError, setSolError] = useState("");
   const [solveStats, setSolveStats] = useState({ n: 0, best: Infinity, sum: 0 });
   const [session, setSession] = useState([]);
   const [recap, setRecap] = useState(null);
@@ -147,7 +155,7 @@ export default function SkewbTrainer() {
             if (Array.isArray(d.caseOff)) setCaseOff(new Set(d.caseOff.filter((x) => typeof x === "string")));
             if (Array.isArray(d.caseKnown)) setCaseKnown(new Set(d.caseKnown.filter((x) => typeof x === "string")));
             if (["all", "learning", "known"].includes(d.scope)) setScope(d.scope);
-            if (["drill", "recap", "solve", "recog"].includes(d.mode)) setMode(d.mode);
+            if (["drill", "recap", "solve", "recog", "onelook"].includes(d.mode)) setMode(d.mode);
             if (typeof d.setupOpen === "boolean") setSetupOpen(d.setupOpen);
             if (d.caseStats && typeof d.caseStats === "object") {
               const cs = {};
@@ -169,7 +177,15 @@ export default function SkewbTrainer() {
             };
             readGrades(d.recogStats, setRecogStats);
             readGrades(d.centersStats, setCentersStats);
+            readGrades(d.onelookStats, setOnelookStats);
             if (d.recogView === "full" || d.recogView === "centers") setRecogView(d.recogView);
+            if (d.onelookView === "len" || d.onelookView === "sol") setOnelookView(d.onelookView);
+            if (Number.isInteger(d.onelookLen) && d.onelookLen >= 0 && d.onelookLen <= 6) setOnelookLen(d.onelookLen);
+            if (d.onelookSol && typeof d.onelookSol.raw === "string" && d.onelookSol.raw.length <= 200 &&
+                (d.onelookSol.nota === "wca" || d.onelookSol.nota === "ns")) {
+              setOnelookSol({ raw: d.onelookSol.raw, nota: d.onelookSol.nota });
+              setSolDraft(d.onelookSol.raw);
+            }
             if (Array.isArray(d.centerSel)) {
               const cs = d.centerSel.filter((f) => core.RECOG_CENTERS.includes(f)).slice(0, 3);
               if (cs.length) setCenterSel(cs);
@@ -200,9 +216,9 @@ export default function SkewbTrainer() {
     return () => { cancelled = true; };
   }, []);
 
-  // ---------- first-layer table (lazy: built/loaded when Full solve is opened) ----------
+  // ---------- first-layer table (lazy: built/loaded when Full solve or One-look is opened) ----------
   useEffect(() => {
-    if (mode !== "solve" || !ready || fldistRef.current || flBuilding.current) return;
+    if ((mode !== "solve" && mode !== "onelook") || !ready || fldistRef.current || flBuilding.current) return;
     flBuilding.current = true;
     (async () => {
       const cached = T && await T.idbGet(FLDIST_KEY);
@@ -222,10 +238,11 @@ export default function SkewbTrainer() {
     try {
       window.storage.set(STORE_KEY, JSON.stringify({
         subsetSel, groupSel, dirSel, caseOff: [...caseOff], caseKnown: [...caseKnown],
-        scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn, ...over,
+        scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn,
+        onelookView, onelookLen, onelookSol, onelookStats, ...over,
       })).catch(() => {});
     } catch (e) {}
-  }, [subsetSel, groupSel, dirSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn]);
+  }, [subsetSel, groupSel, dirSel, caseOff, caseKnown, scope, mode, setupOpen, caseStats, solveStats, recogStats, centersStats, recogView, centerSel, cornersOn, onelookView, onelookLen, onelookSol, onelookStats]);
   useEffect(() => {
     if (!loadedStore.current) return;
     clearTimeout(saveTimer.current);
@@ -374,9 +391,114 @@ export default function SkewbTrainer() {
     nextRecog();
   }, [phase, last, nextRecog]);
 
+  // ---------- one-look ----------
+  // The fixed layer solution, parsed once. A = the state the sequence produces
+  // from solved; every problem is a preimage X = β(Y) with β realizing A⁻¹, so
+  // running the solution from X lands exactly on the drawn D-layer-solved Y.
+  const solPlan = useMemo(() => {
+    if (!onelookSol) return null;
+    const p = E.parseAlg(E.preprocessAlg(onelookSol.raw), onelookSol.nota === "ns" ? "ns" : undefined);
+    if (!p || !p.some((t) => t.kind === "move")) return null;
+    const A = E.applyParsed(p, E.solved(), null, E.makeFrames(null));
+    return { raw: onelookSol.raw, nota: onelookSol.nota, A, moves: E.countMoves(p) };
+  }, [onelookSol]);
+
+  const commitSolution = () => {
+    const raw = solDraft.replace(/\s+/g, " ").trim();
+    if (!raw) { setSolError("enter a layer solution first"); return; }
+    if (raw.length > 120) { setSolError("that’s too long for a layer solution"); return; }
+    const p = E.parseAlg(E.preprocessAlg(raw), nota === "ns" ? "ns" : undefined);
+    if (!p) { setSolError("doesn’t parse as " + nota.toUpperCase() + " — check the notation switch"); return; }
+    if (!p.some((t) => t.kind === "move")) { setSolError("needs at least one move"); return; }
+    setSolError("");
+    setOnelookSol({ raw, nota });
+  };
+
+  // best-effort name for the state left after the user's layer: exact stateKey
+  // match over every sheet case's 4 presentation states (built lazily once)
+  const caseIndexRef = useRef(null);
+  const caseOfState = useCallback((st) => {
+    if (!st || !ready) return null;
+    if (E.eq(st, E.solved())) return { solved: true };
+    if (!caseIndexRef.current) {
+      const map = new Map();
+      for (const sub of model().subsets) {
+        for (const c of sub.cases) {
+          const cp = core.casePres(c);
+          if (!cp.ok) continue;
+          const a0 = DIRS.indexOf(cp.anchorDir);
+          cp.pks.forEach((pk, p) => { if (!map.has(pk)) map.set(pk, { c, d: (p + a0) % 4, subset: sub.key }); });
+        }
+      }
+      caseIndexRef.current = map;
+    }
+    return caseIndexRef.current.get(E.stateKey(st)) || null;
+  }, [ready]);
+
+  const nextOnelook = useCallback(() => {
+    setPhase("ready"); setLast(null);
+    let cur = null;
+    for (let tries = 0; tries < 5 && !cur; tries++) { // re-draw if the target lands on solved (empty scramble)
+      if (onelookView === "len") {
+        const st = fldistRef.current ? core.randomAtFLDist(fldistRef.current, onelookLen) : null;
+        if (st) cur = { kind: "onelook", sub: "len", n: onelookLen, state: st };
+      } else if (solPlan) {
+        const Y = core.randomDLayerState();
+        const st = core.preimageOfLayer(solPlan.A, Y, distRef.current);
+        if (st) cur = { kind: "onelook", sub: "sol", sol: { raw: solPlan.raw, nota: solPlan.nota }, state: st, end: Y };
+      }
+      if (cur) {
+        cur.scramble = core.maskedScramble(cur.state, distRef.current);
+        if (!cur.scramble) cur = null;
+      }
+    }
+    shownAt.current = performance.now();
+    setCurrent(cur);
+  }, [onelookView, onelookLen, solPlan]);
+
+  const revealOnelook = useCallback(() => {
+    if (!current || current.kind !== "onelook" || phase === "stopped") return;
+    const ms = performance.now() - shownAt.current;
+    const rec = { kind: "onelook", ms, sub: current.sub, state: current.state };
+    if (current.sub === "len") {
+      rec.n = current.n;
+      const lines = fldistRef.current ? core.descentLines(current.state, fldistRef.current, 128) : [];
+      rec.lines = lines.map((l) => ({ alg: core.toWCA(l.moves), face: core.anyLayerSolved(l.end) }));
+      rec.capped = lines.length >= 128; // deepest states top out at ~88 lines, but stay honest
+    } else {
+      rec.sol = current.sol;
+      rec.end = current.end;
+      rec.match = caseOfState(current.end);
+    }
+    setLast(rec);
+    setSession((s) => [...s.slice(-49), { kind: "onelook", ms }]);
+    setPhase("stopped");
+  }, [current, phase, caseOfState]);
+
+  // self-grade the one-look attempt (1 = got it, 2 = missed)
+  const gradeOnelook = useCallback((hit) => {
+    if (phase !== "stopped" || !last || last.kind !== "onelook") return;
+    // sol keys carry the notation: the same letters mean different moves in WCA vs NS
+    const key = last.sub === "len" ? "len" + SEP + last.n : "sol" + SEP + last.sol.nota + SEP + last.sol.raw;
+    const label = last.sub === "len" ? last.n + " move" + (last.n === 1 ? "" : "s") : last.sol.raw;
+    setOnelookStats((os) => {
+      const prev = os[key] || { n: 0, hit: 0, sum: 0 };
+      const rec = { label, n: prev.n + 1, hit: prev.hit + (hit ? 1 : 0), sum: prev.sum + last.ms };
+      if (last.sub === "sol") rec.nota = last.sol.nota;
+      return { ...os, [key]: rec };
+    });
+    setSession((s) => { // stamp the verdict onto the reveal's pill
+      const n = s.slice();
+      for (let i = n.length - 1; i >= 0; i--) if (n[i].kind === "onelook") { n[i] = { ...n[i], hit }; break; }
+      return n;
+    });
+    nextOnelook();
+  }, [phase, last, nextOnelook]);
+
   const advance = useCallback(() => {
     if (mode === "solve") { nextSolve(); return; }
     if (mode === "recog") { nextRecog(); return; }
+    if (mode === "onelook") { nextOnelook(); return; }
     if (mode === "drill") { nextDrill(); return; }
     setRecap((r) => {
       if (!r) return r;
@@ -385,7 +507,7 @@ export default function SkewbTrainer() {
       setCurrent(makeDrill(r.queue[idx]));
       return { ...r, idx };
     });
-  }, [mode, nextDrill, nextSolve, nextRecog, makeDrill]);
+  }, [mode, nextDrill, nextSolve, nextRecog, nextOnelook, makeDrill]);
 
   // Regenerate on boot/mode switch (stage reset) and on pool edits (groups/
   // dirs/cases/known/scope). A pool edit only swaps the PENDING problem — it
@@ -398,6 +520,7 @@ export default function SkewbTrainer() {
     genMode.current = mode;
     if (modeSwitch || phase === "running") { setPhase("ready"); setLast(null); }
     if (mode === "solve") { if (modeSwitch) nextSolve(); return; } // solve ignores the pool
+    if (mode === "onelook") { if (modeSwitch) nextOnelook(); return; } // so does one-look
     if (mode === "drill") nextDrill();
     else if (mode === "recap") startRecap();
     else if (modeSwitch || phase !== "stopped") nextRecog();
@@ -476,6 +599,18 @@ export default function SkewbTrainer() {
         }
         return;
       }
+      if (mode === "onelook") {
+        if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") {
+          e.preventDefault();
+          if (phase === "stopped") nextOnelook();
+          else revealOnelook();
+        } else if (phase === "stopped" && (e.code === "Digit1" || e.code === "Numpad1")) {
+          e.preventDefault(); gradeOnelook(true);
+        } else if (phase === "stopped" && (e.code === "Digit2" || e.code === "Numpad2")) {
+          e.preventDefault(); gradeOnelook(false);
+        }
+        return;
+      }
       if (phase === "stopped" && e.code === "KeyK" && last && last.kind === "drill") {
         e.preventDefault();
         const k = knownKey(last.c.uid, last.d);
@@ -487,7 +622,7 @@ export default function SkewbTrainer() {
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [phase, trigger, stopTimer, mode, nextRecog, revealRecog, gradeRecog, answerCenters, quizOptions, current, last, caseBrowser]);
+  }, [phase, trigger, stopTimer, mode, nextRecog, revealRecog, gradeRecog, answerCenters, quizOptions, nextOnelook, revealOnelook, gradeOnelook, current, last, caseBrowser]);
 
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   useEffect(() => { if (phase !== "running") cancelAnimationFrame(raf.current); }, [phase]);
@@ -497,6 +632,20 @@ export default function SkewbTrainer() {
     if (ready && mode === "recog") nextRecog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recogView, centerSel, cornersOn]);
+  // ditto for one-look settings; a 'len' request without the table clears the
+  // stage so the building notice shows instead of a stale problem
+  useEffect(() => {
+    if (!ready || mode !== "onelook") return;
+    if (onelookView === "len" && !fldistRef.current) { setPhase("ready"); setLast(null); setCurrent(null); return; }
+    nextOnelook();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onelookView, onelookLen, solPlan]);
+  // the lazy fldist table landing fulfils a waiting 'len' request, exactly once
+  // (progress ticks and the 'sol' sub-view must NOT regenerate — build churn)
+  useEffect(() => {
+    if (ready && mode === "onelook" && onelookView === "len" && flBoot === "ready" && !current) nextOnelook();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flBoot]);
 
   // ---------- selection toggles ----------
   const toggleSubset = (key) => {
@@ -567,10 +716,11 @@ export default function SkewbTrainer() {
     setCaseStats({});
     setRecogStats({});
     setCentersStats({});
+    setOnelookStats({});
     setSolveStats({ n: 0, best: Infinity, sum: 0 });
     setSession([]);
     setLast(null);
-    persist({ caseStats: {}, recogStats: {}, centersStats: {}, solveStats: { n: 0, best: Infinity, sum: 0 } });
+    persist({ caseStats: {}, recogStats: {}, centersStats: {}, onelookStats: {}, solveStats: { n: 0, best: Infinity, sum: 0 } });
   };
 
   // ---------- alg list for a shown (case, dir) ----------
@@ -691,7 +841,42 @@ export default function SkewbTrainer() {
             onClick={() => { if (mode !== "drill" && mode !== "recap") setMode(lastAlgoMode.current); }}>Algorithm</button>
           <button className={"mode" + (mode === "solve" ? " on" : "")} onClick={() => setMode("solve")}>Full solve</button>
           <button className={"mode" + (mode === "recog" ? " on" : "")} onClick={() => setMode("recog")}>Recognition</button>
+          <button className={"mode" + (mode === "onelook" ? " on" : "")} onClick={() => setMode("onelook")}>One-look</button>
         </div>
+
+        {/* ---------- one-look settings (pool-independent, like Full solve) ---------- */}
+        {mode === "onelook" && (
+          <div className="chips" style={{ alignItems: "center" }}>
+            <span className="grouplabel">layer</span>
+            <div className="modes">
+              {[["len", "Random"], ["sol", "My solution"]].map(([v, l]) => (
+                <button key={v} className={"mode" + (onelookView === v ? " on" : "")} onClick={() => setOnelookView(v)}>{l}</button>
+              ))}
+            </div>
+            {onelookView === "len" ? (
+              <>
+                <span className="grouplabel">moves to a layer</span>
+                <div className="modes">
+                  {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                    <button key={n} className={"mode" + (onelookLen === n ? " on" : "")} onClick={() => setOnelookLen(n)}>{n}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <input className="solinput mono" value={solDraft}
+                  placeholder={nota === "ns" ? "layer solution, e.g. R' b R" : "layer solution, e.g. R' B L"}
+                  onChange={(e) => { setSolDraft(e.target.value); setSolError(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitSolution(); e.target.blur(); } }}
+                  aria-label="layer solution" />
+                <button className="preset" onClick={commitSolution}>set</button>
+                {solError ? <span className="solerr">{solError}</span>
+                  : solPlan ? <span className="grouplabel">{solPlan.moves} move{solPlan.moves === 1 ? "" : "s"} · solves the bottom layer on every scramble</span>
+                  : null}
+              </>
+            )}
+          </div>
+        )}
 
         {/* ---------- setup (Algorithm + Recognition share the pool) ---------- */}
         {(mode === "drill" || mode === "recap" || mode === "recog") && (
@@ -812,6 +997,17 @@ export default function SkewbTrainer() {
             <div className="hint" style={{ marginTop: 10 }}>{recap.queue.length} case views covered</div>
             <button className="restart" onClick={startRecap}>Run it again</button>
           </div>
+        ) : mode === "onelook" && !current ? (
+          <div className="stage" style={{ cursor: "default" }}>
+            <div className="empty" style={{ padding: "40px 0", textAlign: "center" }}>
+              {onelookView === "len"
+                ? (flBoot === "error" ? "Couldn’t build the first-layer table — reload to retry."
+                  : !fldistRef.current ? "Building the first-layer table… " + (flBoot && flBoot.pct !== undefined ? flBoot.pct + "% " : "") + "(first visit only)"
+                  : "Couldn’t generate a scramble — try another length.")
+                : (solPlan ? "Couldn’t generate a scramble — try again."
+                  : "Enter a layer solution above. Every scramble will be one it solves the bottom layer on — inspect, predict the case it leaves, then execute and grade yourself.")}
+            </div>
+          </div>
         ) : !current ? (
           <div className="stage" style={{ cursor: "default" }}>
             <div className="empty" style={{ padding: "40px 0", textAlign: "center" }}>
@@ -891,6 +1087,76 @@ export default function SkewbTrainer() {
                 <button className="restart" style={{ marginTop: 8 }} onClick={revealRecog}>Reveal (space)</button>
               </>
             )}
+          </div>
+        ) : current.kind === "onelook" ? (
+          <div className="stage" style={{ cursor: "default" }}>
+            <div className="stagegrid">
+              <div>
+                <div className="scramble">{dispAlg(current.scramble)}</div>
+                {current.sub === "sol" && (
+                  <div className="hint" style={{ textAlign: "left", marginTop: 8 }}>
+                    your layer: <AlgText text={current.sol.raw} />
+                  </div>
+                )}
+              </div>
+              <Net state={current.state} w={240} />
+            </div>
+            {phase !== "stopped" ? (
+              <>
+                <div className="hint" style={{ marginTop: 14 }}>
+                  {current.sub === "len"
+                    ? (current.n === 0 ? "a layer is already done — one-look the case, then reveal"
+                      : "one-look it: find the " + current.n + "-move layer and predict the case, then reveal")
+                    : "predict the case your solution leaves, then reveal to check"}
+                </div>
+                <button className="restart" style={{ marginTop: 8 }} onClick={revealOnelook}>Reveal (space)</button>
+              </>
+            ) : last && last.kind === "onelook" ? (
+              <>
+                {last.sub === "len" ? (
+                  <div className="analysis">
+                    <div className="solhead">
+                      {last.n === 0 ? "a layer is already solved" : "optimal layer" + ((last.lines || []).length === 1 ? "" : "s") + " in " + last.n}
+                      <span className="mono" style={{ marginLeft: 10 }}>· {fmt(last.ms)}s look</span>
+                    </div>
+                    <div className="sollist">
+                      {(last.lines || []).slice(0, 8).map((l, i) => (
+                        <span key={i} className="mono solpill fl">{l.alg ? dispAlg(l.alg) : "done"}{l.face ? " → " + l.face : ""}</span>
+                      ))}
+                      {(last.lines || []).length > 8 ? <span className="hint">+{last.lines.length - 8}{last.capped ? "+" : ""} more</span> : null}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="hint" style={{ marginTop: 14 }}>after your layer:</div>
+                    <div className="stagegrid recogstage">
+                      <Net state={last.end} w={240} />
+                    </div>
+                    <div className="reveal">
+                      {last.match && last.match.solved ? (
+                        <span className="casename">solved — nothing left</span>
+                      ) : last.match ? (
+                        <>
+                          <span className="tag" style={{ "--cdot": subColor(last.match.subset) }}>
+                            <span className="dot" />{last.match.subset}
+                          </span>
+                          <span className="casename">{last.match.c.name}</span>
+                          <span className="bartag">{DIRS[last.match.d]} view</span>
+                        </>
+                      ) : (
+                        <span className="casename">not in your sheets</span>
+                      )}
+                      <span className="mono">{fmt(last.ms)}s look</span>
+                    </div>
+                  </>
+                )}
+                <div className="graderow">
+                  <button className="gradebtn hit" onClick={() => gradeOnelook(true)}>Got it ✓ (1)</button>
+                  <button className="gradebtn miss" onClick={() => gradeOnelook(false)}>Missed ✗ (2)</button>
+                  <button className="preset" onClick={nextOnelook}>skip (space)</button>
+                </div>
+              </>
+            ) : null}
           </div>
         ) : current.kind === "solve" ? (
           <div className="stage" onPointerDown={(e) => { e.preventDefault(); trigger(); }}>
@@ -1008,6 +1274,41 @@ export default function SkewbTrainer() {
                             <td className="mono">{s.hit}</td>
                             <td className="mono">{s.dk || 0}</td>
                             <td className="mono">{Math.round((s.hit / s.n) * 100)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </>
+            ) : mode === "onelook" ? (
+              <>
+                <h3>One-look</h3>
+                {(() => {
+                  const rows = Object.entries(onelookStats);
+                  if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 got it · 2 missed) — accuracy lands here per layer setting.</div>;
+                  const rank = (k) => {
+                    const i = k.indexOf(SEP);
+                    const sub = k.slice(0, i), rest = k.slice(i + 1);
+                    return sub === "len" ? [0, +rest, ""] : [1, 0, rest];
+                  };
+                  rows.sort(([a], [b]) => {
+                    const ra = rank(a), rb = rank(b);
+                    return (ra[0] - rb[0]) || (ra[1] - rb[1]) || (ra[2] < rb[2] ? -1 : ra[2] > rb[2] ? 1 : 0);
+                  });
+                  return (
+                    <table>
+                      <thead><tr><th>Layer</th><th>Tries</th><th>Got it</th><th>Accuracy</th><th>Mean look</th></tr></thead>
+                      <tbody>
+                        {rows.map(([k, s]) => (
+                          <tr key={k}>
+                            <td className="name">{k.startsWith("sol" + SEP)
+                              ? <><AlgText text={s.label} />{s.nota ? <span className="casesub" style={{ marginLeft: 6 }}>{s.nota.toUpperCase()}</span> : null}</>
+                              : s.label}</td>
+                            <td className="mono">{s.n}</td>
+                            <td className="mono">{s.hit}</td>
+                            <td className="mono">{Math.round((s.hit / s.n) * 100)}%</td>
+                            <td className="mono">{fmt(s.sum / s.n)}</td>
                           </tr>
                         ))}
                       </tbody>
