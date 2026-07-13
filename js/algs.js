@@ -32,6 +32,10 @@
   const A = window.OOAccount;
   const R = window.OORender;
   const E = window.OOEngine;
+  // the solver core's physical facelet model drives the case pictures (built
+  // layer on the bottom) and the displayed starting rotations — dist/algData
+  // are solver-only concerns, so both are omitted here
+  const CORE = window.OOSolverCore ? window.OOSolverCore.makeSolverCore(E, null, null) : null;
   const CFG = window.OO_CONFIG || {};
   const adminEmails = (CFG.adminEmails || []).map(e => e.toLowerCase());
   const app = document.getElementById('app');
@@ -146,7 +150,7 @@
     const ov = overrides.get(id);
     const removed = (ov && ov.removed) || new Set();
     const pool = [...c.algs.filter(a => !removed.has(a.alg)), ...((ov && ov.added) || [])];
-    let out = { pks: null, canons: new Set(), anchorDir: 'Front' };
+    let out = { pks: null, canons: new Set(), cls: null, anchorDir: 'Front' };
     for (const a of pool) {
       const core = stripPostRot(E.normAlg(a.alg));
       const cs = caseStateOf(core);
@@ -160,8 +164,13 @@
         canons.add(realCanonKey(st));
       }
       if (!ok) continue;
+      // the case's full 12-rotation class — the sheets' cases are
+      // orientation-free, so this is the real membership test (pks covers
+      // only the four y-views)
+      let cls = null;
+      if (CORE) { cls = new Set(); for (const rot of CORE.syms.rots) cls.add(stateKey(rot.apply(cs))); }
       const dir = a.side || a.direction; // added rows carry `side`, baseline `direction`
-      out = { pks, canons, anchorDir: DIRS.includes(dir) ? dir : 'Front' };
+      out = { pks, canons, cls, anchorDir: DIRS.includes(dir) ? dir : 'Front' };
       break;
     }
     presCache.set(id, out);
@@ -182,13 +191,30 @@
     const cs = caseStateOf(core);
     return { alg: a.alg, meta: a, source, core, state: cs, display: core, solves: !!cs };
   }
-  // Sheet algs always display their authored notation verbatim — rotations
-  // included, they're part of how the alg is executed. (WCA's four letters
-  // can't name the free-corner moves, so no rotation-preserving WCA form
-  // exists; the rotationless conversion is kept for keying and for the WCA
-  // input mode only.) Algs without an authored form (admin-added) follow the
-  // notation toggle.
-  const rowText = (r) => (r.meta && r.meta.ns) ? r.meta.ns : dispAlg(r.display);
+  // Sheet algs display the line a human executes FROM THE PICTURE: the
+  // authored text verbatim whenever it already physically solves from the
+  // group's pictured hold (all standard groups — the picture is the raw
+  // pinned frame the sheets author against), or the folded body behind a
+  // re-derived lead rotation for the few odd-orientation groups whose picture
+  // was rotated to put the built layer on the bottom (USER requirement
+  // 2026-07-10; derivation + proof live in solver-core's facelet model).
+  // Unparseable slash-alternative texts fall back to the authored form.
+  // Algs without an authored form (admin-added) follow the notation toggle.
+  const rowLine = (r) => {
+    if (r.line === undefined)
+      r.line = (r.pic && CORE)
+        ? CORE.sheetLineFor(r.pic.fl, (r.meta && r.meta.ns) ? r.meta.ns : r.display, (r.meta && r.meta.ns) ? 'ns' : 'wca')
+        : null;
+    return r.line;
+  };
+  const rowText = (r) => {
+    const line = rowLine(r);
+    if (line && line.ok) return (r.meta && r.meta.ns) ? line.text : dispAlg(line.text);
+    return (r.meta && r.meta.ns) ? r.meta.ns : dispAlg(r.display);
+  };
+  // an authored text we could not adjust to a ROTATED picture (slash texts):
+  // shown as authored, flagged so the reader knows it runs from another hold
+  const rowUnadjusted = (r) => { const line = rowLine(r); return !!(line && !line.ok && r.pic && r.pic.rotated); };
   // alg text as evenly-spaced tokens, rotations tinted so the regrips pop
   const isRotTok2 = (t) => /^[xyz](2'|2|')?$/.test(t);
   function algText(r) {
@@ -238,13 +264,23 @@
       // computed BEFORE the display sort, so reordering never changes the diagram.
       const anchor = grp.find(r => r.state) || grp[0];
       const image = anchor && anchor.state ? anchor.state : null;
+      // pic = the pictured hold: the raw pinned facelets (the hold every
+      // authored text executes from verbatim), rotated so the built layer
+      // sits on the BOTTOM for the few odd-orientation groups (USER
+      // requirement 2026-07-10). Every displayed alg text is then derived
+      // from — and physically proved against — exactly this picture.
+      const pic = image && CORE ? CORE.layerDownFacelets(image) : null;
+      for (const r of grp) r.pic = pic;      // rowText derives against the picture
       grp.sort((x, y) => ordIx(ord, x.alg) - ordIx(ord, y.alg));
-      out.push({ side, rows: grp, image });
+      out.push({ side, rows: grp, image, pic });
     }
     return out.sort((a, b) => sideRank(a.side) - sideRank(b.side));
   }
 
   // validate a candidate WCA alg for a case -> {ok, side} | {ok:false, reason}
+  // (typed rotation tokens are read with the input pipeline's engine
+  // semantics — re-typing a displayed SHEET-letter rotation may still be
+  // rejected; that mismatch is the pending site-wide letter-flip decision)
   function validate(subsetKey, c, alg) {
     const cs = caseStateOf(alg);
     if (!cs) return { ok: false, reason: 'That isn’t a valid algorithm in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation, or it doesn’t solve to a single state.' };
@@ -253,8 +289,26 @@
     // could solve a different position). Refuse rather than accept blindly.
     if (!cp.pks) return { ok: false, reason: 'There’s no reference algorithm for this case yet, so we can’t check it.' };
     const p = cp.pks.indexOf(stateKey(cs));
-    if (p < 0) return { ok: false, reason: 'Those are valid moves, but they don’t solve this case.' };
-    return { ok: true, side: DIRS[(DIRS.indexOf(cp.anchorDir) + p) % 4] };
+    if (p >= 0) return { ok: true, side: DIRS[(DIRS.indexOf(cp.anchorDir) + p) % 4] };
+    // sheet cases are orientation-free: algs may solve the case from any
+    // whole-cube rotation, like the imported odd-hold groups — accept those,
+    // unlabelled; they get their own picture-anchored group in the display
+    if (cp.cls && cp.cls.has(stateKey(cs))) return { ok: true, side: '' };
+    // picture-anchored acceptance (the page's own display contract): the
+    // stored rotationless form physically solves one of the case's displayed
+    // pictures. For an odd-rotated picture the alg's engine pre-state is a
+    // genuinely different pinned state (not in cls), so only this physical
+    // check can recognize it; the row then displays as its own group.
+    if (CORE) {
+      const toks = E.parseAlg(E.preprocessAlg(alg));
+      if (toks) {
+        const phi = CORE.physPermNS(toks);
+        for (const g of mergedGroups(subsetKey, c))
+          if (g.pic && CORE.SOLVED24_KEYS.has(CORE.flKey(CORE.pApply(g.pic.fl, phi))))
+            return { ok: true, side: '' };
+      }
+    }
+    return { ok: false, reason: 'Those are valid moves, but they don’t solve this case.' };
   }
 
   // ---------- edit drafts ----------
@@ -274,6 +328,7 @@
     async loadAll() {
       overrides.clear();
       presCache.clear();
+      extraTextsCache.clear();
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       try {
@@ -369,24 +424,47 @@
   let section = null;              // current subset key
   let main, sideNav, statusEl, notaBox, subNav;
 
+  // display lines that differ from every authored text (the re-derived leads
+  // of rotated-picture groups) — cached per case so search stays fast, and
+  // invalidated together with presCache (rerender clears both).
+  const extraTextsCache = new Map();
+  function extraTexts(subsetKey, c) {
+    const id = caseId(subsetKey, c.name);
+    if (extraTextsCache.has(id)) return extraTextsCache.get(id);
+    const out = [];
+    for (const g of mergedGroups(subsetKey, c))
+      for (const r of g.rows) {
+        const line = rowLine(r);
+        if (line && line.ok && line.rederived) out.push(line.text);
+      }
+    extraTextsCache.set(id, out);
+    return out;
+  }
   const matchCase = (subsetKey, c) => {
     if (!query) return true;
     const q = query.toLowerCase();
     if (c.name.toLowerCase().includes(q) || subsetKey.toLowerCase().includes(q)) return true;
     // search baseline (minus tombstoned) + admin-added algs, in raw, normalized,
-    // active-notation and authored-sheet form (so an alg typed as seen on
-    // screen still matches).
+    // active-notation and authored-sheet form, PLUS the re-derived display
+    // lines (so an alg typed as seen on screen still matches).
     const ov = overrides.get(caseId(subsetKey, c.name)) || { added: [], removed: new Set() };
     const texts = [];
     for (const a of c.algs) if (!ov.removed.has(a.alg)) { texts.push(a.alg); if (a.ns) texts.push(a.ns); }
     for (const a of ov.added) texts.push(a.alg);
+    texts.push(...extraTexts(subsetKey, c));
     return texts.some(a => a.toLowerCase().includes(q) || E.normAlg(a).toLowerCase().includes(q)
       || (NOTA === 'ns' && E.wcaToNS(E.normAlg(a)).toLowerCase().includes(q)));
   };
 
-  function caseDiagram(state) {
-    if (!state || !R) return h('div', { class: 'algnet empty' });
-    return h('div', { class: 'algnet', html: R.netSVG(state, 160, { cls: 'skewbsvg', thumb: true }) });
+  // The case picture: the standard alg-sheet development view (caseSVG) drawn
+  // from the group's pictured facelets — built layer on the bottom. Falls back
+  // to the two-view net in the pinned (layer-down) frame if the sheet view is
+  // unavailable.
+  function caseDiagram(pic, state) {
+    if (!R || (!pic && !state)) return h('div', { class: 'algnet empty' });
+    if (pic && R.caseSVG) return h('div', { class: 'algnet', html: R.caseSVG(pic.fl, 160, { cls: 'skewbsvg' }) });
+    if (!state) return h('div', { class: 'algnet empty' });
+    return h('div', { class: 'algnet', html: R.netSVG(state, 160, { cls: 'skewbsvg', thumb: true, pinned: true }) });
   }
 
   function algRow(subKey, c, r, rows, rerender) {
@@ -400,6 +478,7 @@
       r.meta && r.meta.rating === 'poor' ? h('span', { class: 'ratetag poor' }, 'poor') : null,
       r.source === 'add' ? h('span', { class: 'addedtag' }, 'added') : null,
       !r.solves ? h('span', { class: 'warntag', role: 'img', 'aria-label': 'Warning: this stored alg does not parse to a clean case state.', title: 'This stored alg does not parse to a clean case state.' }, '⚠') : null,
+      r.solves && rowUnadjusted(r) ? h('span', { class: 'warntag', role: 'img', 'aria-label': 'Shown as authored: this text could not be adjusted to the rotated picture.', title: 'Shown as authored — this text starts from a different hold than the picture (we couldn’t re-derive its rotation).' }, '⟳') : null,
       admin ? h('button', { class: 'rm', title: 'Remove', 'aria-label': 'Remove alg', onclick: async (ev) => { ev.target.disabled = true; await removeAlg(subKey, c, r); rerender(); } }, '×') : null);
   }
 
@@ -431,23 +510,23 @@
 
   // one labelled row: diagram + heading + first-move table. The diagram shows
   // the group's exact position; every alg in the table solves it as written.
-  function sideRow(subKey, c, labelText, rows, image, rerender) {
+  function sideRow(subKey, c, labelText, g, rerender) {
     return h('div', { class: 'sidegrp' },
-      caseDiagram(image),
+      caseDiagram(g.pic, g.image),
       h('div', { class: 'sidebody' },
         h('div', { class: 'sidehd' }, labelText),
-        fmTable(subKey, c, rows, rerender)));
+        fmTable(subKey, c, g.rows, rerender)));
   }
 
   const anchorIdOf = (name) => 'case-' + String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
   function renderCase(subKey, c) {
     const card = h('div', { class: 'casecard', id: anchorIdOf(c.name) });
-    const rerender = () => { presCache.delete(caseId(subKey, c.name)); card.replaceWith(renderCase(subKey, c)); };
+    const rerender = () => { presCache.delete(caseId(subKey, c.name)); extraTextsCache.delete(caseId(subKey, c.name)); card.replaceWith(renderCase(subKey, c)); };
     card.appendChild(h('div', { class: 'casehd' }, h('span', { class: 'casename' }, c.name)));
     const body = h('div', { class: 'casebody' });
     const groups = mergedGroups(subKey, c);
     if (!groups.length) body.appendChild(h('div', { class: 'noalgs' }, 'No algorithms yet.'));
-    for (const g of groups) body.appendChild(sideRow(subKey, c, dirLabel(g.side), g.rows, g.image, rerender));
+    for (const g of groups) body.appendChild(sideRow(subKey, c, dirLabel(g.side), g, rerender));
     if (isAdmin()) body.appendChild(adminAdder(subKey, c, () => rerender()));
     card.appendChild(body);
     return card;
@@ -478,7 +557,7 @@
       if (!raw) { fb.className = 'addfb'; fb.textContent = ''; return; }
       const hit = check(raw);
       fb.className = 'addfb ' + (hit.wca ? 'ok' : 'err');
-      fb.textContent = hit.wca ? '✓ ' + dirLabel(hit.side).toLowerCase() : hit.reason;
+      fb.textContent = hit.wca ? '✓ ' + (hit.side ? dirLabel(hit.side).toLowerCase() : 'solves this case from another angle') : hit.reason;
     });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
     return h('div', { class: 'adder' }, input, h('button', { class: 'primary sm', onclick: submit }, 'Add'), fb);

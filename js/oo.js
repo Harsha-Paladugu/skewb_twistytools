@@ -25,9 +25,11 @@ const notaOf = sol => sol.notation === 'ns' ? 'ns' : 'wca';
 const dispSol = sol => E.convertAlg(sol.solution, notaOf(sol), NOTA) || sol.solution;
 const dispSolMirror = sol => E.convertAlg(E.mirrorAlg(sol.solution), notaOf(sol), NOTA) || E.mirrorAlg(sol.solution);
 
-// Each scramble (a position + its mirror — one census class, keyed by pairId)
-// keeps at most this many approved solutions. Enforced app-side — in the submit
-// form and at approval — since Firestore rules can't count sibling docs.
+// Each SIDE of a scramble keeps at most this many approved solutions. A side is
+// one census entry (the hold-24 class derived from classId): since 2026-07-10 a
+// position and its LR mirror are separate census entries that only share a page
+// (keyed by pairId), so each side has its own cap. Enforced app-side — in the
+// submit form and at approval — since Firestore rules can't count sibling docs.
 // Approving/creating past it is blocked.
 const MAX_SOLUTIONS = 2;
 const moderatorFormUrl = () => String(CFG.moderatorFormUrl || '').trim();
@@ -45,19 +47,26 @@ let browseFilter = 'all';   // depth browser: 'all' | 'unsolved' | 'solved'
 async function buildTables(report) {
   if (!window.OOTables) throw new Error('js/tables.js must load before js/oo.js');
   T.syms = E.buildSyms();
-  // Build the canonicalizers once (each closes over T.syms); canonOf/mirrorOf
-  // below delegate to these, so the closures aren't rebuilt per call in hot loops.
-  // canonOf folds ALL 24 symmetries (12 rotations + 12 mirrors) — the census
-  // class key, matching tables.js; rotCanonOf folds rotations only (it tells a
-  // class's two mirror sides apart); mirrorOf gives the rotation-canonical id
-  // of a state's mirror image.
-  T.canonOf = E.makeFullCanon(T.syms);
-  T.rotCanonOf = E.makeCanon(T.syms);
-  T.mirrorOf = E.makeMirrorCanon(T.syms);
   T.rotByCorner = E.makeFrames(T.syms);
   // dist is shared with the solver (KEY_DIST); the canonical-class tables are
-  // census-only (KEY_CLASSES). Either cache miss rebuilds just that piece.
+  // census-only (KEY_CLASSES — hold-24-folded reps/depths, 132,315 entries).
+  // Either cache miss rebuilds just that piece.
   T.dist = await window.OOTables.loadOrBuildDist(E, report, tick);
+  // Build the canonicalizers once (each closes over T.syms + T.dist — the
+  // hold-24 fold needs dist to derive ι's solving word, so they can only be
+  // built after loadOrBuildDist). entryCanonOf folds all 24 PROPER rotations
+  // (the engine's 12 + the 12 tetrad-swapping re-holds via ι — E.makeHoldSym,
+  // ground-truth §Symmetry): the CENSUS entry key, matching tables.js — a
+  // position and its LR mirror are separate entries (re-holds preserve
+  // handedness, mirrors flip it), each with its own ordinal/done-bit.
+  // pairCanonOf folds the full 48-element group (24 rotations + 24 mirror
+  // images): the PAGE-grouping key (pairId) and the Firestore pairSolutions
+  // query key. mirrorEntryOf gives the entry id of a state's mirror image.
+  T.entryCanonOf = E.makeHold24Canon(T.syms, T.dist);
+  T.pairCanonOf = E.makeFull48Canon(T.syms, T.dist);
+  T.hold = E.makeHoldSym(T.syms);
+  const mir0 = T.syms.mirrors[0];
+  T.mirrorEntryOf = s => T.entryCanonOf(mir0.apply(s));
   const cls = await window.OOTables.loadOrBuildClassTables(E, T.dist, report, tick);
   T.reps = cls.reps;
   T.depths = cls.depths;
@@ -72,34 +81,52 @@ function ordinalOf(classId) { // binary search in reps
     if (T.reps[mid] < classId) lo = mid + 1; else hi = mid - 1; }
   return -1;
 }
-const canonOf = s => T.canonOf(s);      // 24-sym class id (a position and its mirror share it)
-const mirrorOf = s => T.mirrorOf(s);    // rotation-canonical id of the mirror image
+const pairIdOf = s => T.pairCanonOf(s);   // 48-fold page id (a position and its mirror share it)
+const entryOf = s => T.entryCanonOf(s);   // hold-24 census entry id (one per mirror side)
+const mirrorOf = s => T.mirrorEntryOf(s); // census entry id of the mirror image
 // done-bitmap accessors: one bit per class ordinal
 const testBit = (bm, o) => !!(bm[o >> 3] & (1 << (o & 7)));
 const setBit = (bm, o) => { bm[o >> 3] |= 1 << (o & 7); };
 // decode a base64 done-bitmap into a fresh Uint8Array sized to the class count
-// (a missing/empty string yields the all-zero bitmap).
+// (a missing/empty string yields the all-zero bitmap). A WRONG-SIZED stored map
+// (e.g. the pre-2026-07-10 24-sym-fold bitmap, ⌈131391/8⌉ bytes, or the interim
+// 12-rotation one, ⌈262674/8⌉) indexes a different class enumeration, so it is
+// discarded as all-zero rather than misread — the admin "Recompute solved
+// bitmap" rebuilds it from the solution docs.
 function decodeBitmap(b64) {
   const bm = new Uint8Array(Math.ceil(T.reps.length / 8));
   const bin = atob(b64 || '');
+  if (bin.length && bin.length !== bm.length) return bm; // stale enumeration
   for (let i = 0; i < bin.length && i < bm.length; i++) bm[i] = bin.charCodeAt(i);
   return bm;
 }
 // a state index is usable only if it's an in-range integer (E.unidx has no bounds
 // guard); client-side mirror of the Firestore create-rule bounds.
 const validId = id => Number.isInteger(id) && id >= 0 && id < E.NSLOTS;
-function variantsOf(classId) { // unique rotation variants of a class, each with its sym
+// The hold-24 entry a solution doc belongs to. classId is normalized through
+// the entry canon rather than compared verbatim, so a legacy-era doc (whose
+// stored classId is an id from a superseded fold) still lands on the side its
+// state actually belongs to — and can never dodge the per-side lists and caps.
+const sideIdOf = doc => validId(doc.classId) ? entryOf(E.unidx(doc.classId)) : -1;
+// Every state a visitor might be holding for this census entry: the 12
+// rotation images of the rep AND the 12 rotation images of its re-hold image
+// ι(rep) (same scramble performed with the cube held 90° differently — one
+// entry since 2026-07-10), deduped (up to 24).
+function variantsOf(classId) {
   const s = E.unidx(classId), seen = new Set(), out = [];
-  for (const sym of T.syms.rots) {
-    const v = E.applySym(sym, s), ix = E.idx(v);
-    if (!seen.has(ix)) { seen.add(ix); out.push({ ix, state: v }); }
+  for (const base of [s, T.hold.iota(s, T.dist)]) {
+    if (!base) continue;
+    for (const sym of T.syms.rots) {
+      const v = E.applySym(sym, base), ix = E.idx(v);
+      if (!seen.has(ix)) { seen.add(ix); out.push({ ix, state: v }); }
+    }
   }
   return out;
 }
 
 /* ---------------- solution verification ---------------- */
-// Returns {ok, side:'a'|'b', moves, error?} — accepts a solution for any rotation
-// variant of either side of the pair.
+// Returns {ok, side:'a'|'b', moves, error?} — accepts a solution for any hold
+// variant (rotations + re-holds, up to 24) of either side of the pair.
 function verifySolution(text, pair, notation) {
   const nota = notation || NOTA;
   // The solved position (depth 0) takes no solutions: any accepted "solution"
@@ -121,29 +148,29 @@ function verifySolution(text, pair, notation) {
       if (E.eq(end, E.solved())) return { ok: true, side, moves };
     }
   }
-  return { ok: false, moves, error: 'That doesn\u2019t solve this scramble. We checked it from every rotation of both mirrors.' };
+  return { ok: false, moves, error: 'That doesn\u2019t solve this scramble. We checked it from every way of holding either mirror.' };
 }
-// One census class covers a position AND its LR mirror (24-sym fold). The page
-// still shows the two mirror "sides" separately: `a` is the class rep (which is
-// also the smaller rotation-canonical id), `b` its mirror image — null for the
-// 108 self-mirror classes. Both sides share the class ordinal and done-bit.
-// Accepts ANY in-range state index and normalizes by full 24-sym
+// One PAGE covers a position AND its LR mirror (pairId = full 48-group fold),
+// but the two mirror "sides" are SEPARATE census entries (hold-24 classes),
+// each with its own ordinal and done-bit: `a` is the pair rep (a 48-fold rep
+// is also its own hold-24 orbit's minimum, so it IS a census rep), `b` the
+// mirror side's entry id (also in T.reps) — null for the 327 self-mirror
+// entries. Accepts ANY in-range state index and normalizes by full 48-group
 // canonicalization — total even for forged non-canonical ids (min(id, mirror)
 // alone would mis-normalize those and strand ord/done-bit lookups at -1).
 function pairOf(anyClassId) {
-  const pairId = canonOf(E.unidx(anyClassId));
+  const pairId = pairIdOf(E.unidx(anyClassId));
   const lowState = E.unidx(pairId);
   const hiId = mirrorOf(lowState);
-  const ord = ordinalOf(pairId);
   const pair = {
     pairId,
-    a: { id: pairId, state: lowState, ord, depth: T.dist[pairId],
+    a: { id: pairId, state: lowState, ord: ordinalOf(pairId), depth: T.dist[pairId],
          scramble: E.optimalScramble(lowState, T.dist, false), variants: variantsOf(pairId) },
     b: null, self: pairId === hiId,
   };
   if (!pair.self) {
     const hiState = E.unidx(hiId);
-    pair.b = { id: hiId, state: hiState, ord, depth: T.dist[hiId],
+    pair.b = { id: hiId, state: hiState, ord: ordinalOf(hiId), depth: T.dist[hiId],
                scramble: E.optimalScramble(hiState, T.dist, false), variants: variantsOf(hiId) };
   }
   return pair;
@@ -171,13 +198,18 @@ function demoDB() {
     signOut() { return A.signOut(); },
     async stats() {
       const d = load(); const done = new Set();
-      for (const s of d.solutions) if (s.status === 'approved') done.add(s.pairId);
+      for (const s of d.solutions) if (s.status === 'approved') {
+        // a solution marks ONLY the side it solves: classId -> hold-24 entry canon -> ordinal
+        const o = validId(s.classId) ? ordinalOf(entryOf(E.unidx(s.classId))) : -1;
+        if (o >= 0) done.add(o);
+      }
       return { done: done.size, total: T.reps.length };
     },
     async doneMap() {
       const d = load(); const bm = new Uint8Array(Math.ceil(T.reps.length / 8));
       for (const s of d.solutions) if (s.status === 'approved') {
-        const o = ordinalOf(s.pairId); if (o >= 0) setBit(bm, o);
+        const o = validId(s.classId) ? ordinalOf(entryOf(E.unidx(s.classId))) : -1;
+        if (o >= 0) setBit(bm, o);
       }
       return bm;
     },
@@ -195,9 +227,18 @@ function demoDB() {
     async review(id, action) {
       const d = load(); const s = d.solutions.find(x => x.id === id);
       if (!s) return;
-      if (action === 'approved'
-          && d.solutions.filter(x => x.pairId === s.pairId && x.status === 'approved').length >= MAX_SOLUTIONS)
-        throw new Error('CAP');
+      if (action === 'approved') {
+        // side integrity: the stored text must solve the side classId claims —
+        // a mirror-side text approved onto this side would record a
+        // wrong-handed solution and flip the wrong done-bit.
+        const pPair = validId(s.classId) ? pairOf(s.classId) : null;
+        const pv = pPair ? verifySolution(s.solution, pPair, s.notation === 'ns' ? 'ns' : 'wca') : { ok: false };
+        const pSolved = pv.ok ? (pv.side === 'b' && pPair.b ? pPair.b.id : pPair.a.id) : -1;
+        if (pSolved !== sideIdOf(s)) throw new Error('SIDE');
+        // per-SIDE cap: sideIdOf identifies the side within the pair
+        if (d.solutions.filter(x => sideIdOf(x) === sideIdOf(s) && x.status === 'approved').length >= MAX_SOLUTIONS)
+          throw new Error('CAP');
+      }
       s.status = action; s.reviewedBy = A.user && A.user.email;
       save(d); notify();
     },
@@ -249,6 +290,9 @@ function liveDB() {
     signIn() { return A.signIn(); },
     signOut() { return A.signOut(); },
     async stats() {
+      // meta/stats is a derived cache; a stale stored total (e.g. the pre-split
+      // 131,391 or the interim 262,674) self-heals at the next approve/recompute
+      // — don't write it from page code. The fallback total is the live class count.
       try { const d = await F.getDoc(F.doc(fs, 'meta', 'stats'));
         return d.exists() ? d.data() : { done: 0, total: T.reps.length };
       } catch { return { done: 0, total: T.reps.length }; }
@@ -259,6 +303,15 @@ function liveDB() {
         return decodeBitmap(d.exists() ? d.data().b64 : '');
       } catch { return decodeBitmap(''); }
     },
+    // DATA-COMPAT NOTE (2026-07-10): pairId semantics changed from the 24-sym
+    // fold (131,391 ids) to the full 48-group fold (66,321 ids). A solution
+    // doc written under the old semantics may carry a pairId that is no longer
+    // the canonical page id, so it simply stops matching this query and
+    // disappears from its page. That is display-only: approval/recompute
+    // re-derive everything from classId (an absolute state index) and never
+    // trust the stored pairId, so done-bits stay correct — the admin
+    // "Recompute solved bitmap" action is the documented recovery after the
+    // re-key, and stranded docs can be re-submitted or fixed by hand.
     async pairSolutions(pairId) {
       const out = [];
       const q1 = F.query(F.collection(fs, 'solutions'),
@@ -286,19 +339,34 @@ function liveDB() {
         await F.updateDoc(F.doc(fs, 'solutions', id), { status: 'rejected', reviewedBy: A.user.email });
         notify(); return;
       }
-      // Enforce the per-scramble cap before approving. Rules can't count sibling
-      // docs and Firestore transactions can't run queries, so this query runs
-      // BEFORE the transaction — it is best-effort and racy: two moderators
-      // approving different pending solutions for the same pair concurrently can
-      // both pass it and exceed MAX_SOLUTIONS. Accepted trade-off: worst case is
-      // one extra approved solution (visible in the UI, deletable by an admin);
-      // the bitmap/counter stay consistent because both transactions serialize
-      // on the meta docs. Throw CAP so pageMod can explain the block.
+      // Enforce the per-SIDE cap before approving: query approved docs by pairId
+      // (the indexed Firestore key), then keep only the ones for the side being
+      // approved (sideIdOf — classIds normalized through the entry canon, so
+      // legacy-fold ids can't dodge the cap). Rules can't count sibling docs and Firestore
+      // transactions can't run queries, so this query runs BEFORE the
+      // transaction — it is best-effort and racy: two moderators approving
+      // different pending solutions for the same side concurrently can both pass
+      // it and exceed MAX_SOLUTIONS. Accepted trade-off: worst case is one extra
+      // approved solution (visible in the UI, deletable by an admin); the
+      // bitmap/counter stay consistent because both transactions serialize on
+      // the meta docs. Throw CAP so pageMod can explain the block.
       const preSnap = await F.getDoc(F.doc(fs, 'solutions', id));
       if (!preSnap.exists() || preSnap.data().status !== 'pending') { notify(); return; }
+      // Side integrity, re-checked at approval time (pageMod gates the button on
+      // the same test, but a stale queue render must not slip through): the
+      // stored text must solve the side classId claims. A text that only solves
+      // the MIRROR side would otherwise mark the claimed side's done-bit with a
+      // wrong-handed solution — mirrors are separate entries since 2026-07-10.
+      const pd = preSnap.data();
+      const pPair = validId(pd.classId) ? pairOf(pd.classId) : null;
+      const pv = pPair ? verifySolution(pd.solution, pPair, pd.notation === 'ns' ? 'ns' : 'wca') : { ok: false };
+      const pSolved = pv.ok ? (pv.side === 'b' && pPair.b ? pPair.b.id : pPair.a.id) : -1;
+      if (pSolved !== sideIdOf(pd)) throw new Error('SIDE');
       const approvedQ = F.query(F.collection(fs, 'solutions'),
         F.where('pairId', '==', preSnap.data().pairId), F.where('status', '==', 'approved'));
-      if ((await F.getDocs(approvedQ)).size >= MAX_SOLUTIONS) throw new Error('CAP');
+      let sameSide = 0;
+      (await F.getDocs(approvedQ)).forEach(d => { if (sideIdOf(d.data()) === sideIdOf(pd)) sameSide++; });
+      if (sameSide >= MAX_SOLUTIONS) throw new Error('CAP');
       // approval: transaction updates the solution, the done bitmap and the counter
       await F.runTransaction(fs, async tx => {
         const solRef = F.doc(fs, 'solutions', id);
@@ -308,11 +376,12 @@ function liveDB() {
         const mapRef = F.doc(fs, 'meta', 'doneMap'), statRef = F.doc(fs, 'meta', 'stats');
         const mapDoc = await tx.get(mapRef), statDoc = await tx.get(statRef);
         const bm = decodeBitmap(mapDoc.exists() ? mapDoc.data().b64 : '');
-        // Re-derive the class rep from classId (full 24-sym canon, matching
-        // pairOf) rather than trusting the submitter-supplied partnerId/pairId,
-        // so a forged value can't flip an unrelated position's done-bit or
-        // strand the approval. One class, one ordinal, one bit.
-        const o = ordinalOf(canonOf(E.unidx(data.classId)));
+        // Re-derive the side's ordinal from classId via the HOLD-24 entry canon
+        // (the census entry key — one entry per mirror side) rather than trusting
+        // the submitter-supplied partnerId/pairId, so a forged value can't flip an
+        // unrelated position's done-bit or strand the approval. An approved
+        // solution marks ONLY the side it solves. One side, one ordinal, one bit.
+        const o = ordinalOf(entryOf(E.unidx(data.classId)));
         let added = 0;
         if (o >= 0 && !testBit(bm, o)) { setBit(bm, o); added = 1; }
         let b64 = ''; const CH = 8192;
@@ -351,7 +420,7 @@ function liveDB() {
       (await F.getDocs(q)).forEach(d => {
         const cid = d.data().classId;
         if (!validId(cid)) { skipped++; return; }
-        const o = ordinalOf(canonOf(E.unidx(cid))); // same keying as the approval tx
+        const o = ordinalOf(entryOf(E.unidx(cid))); // same keying as the approval tx (per side)
         if (o >= 0) setBit(bm, o); else skipped++;
       });
       let done = 0;
@@ -422,7 +491,7 @@ async function pageHome(main) {
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'The best human solution to every Skewb position.'),
     h('p', { class: 'lede' },
-      'Fold rotations and mirrors together and the Skewb’s 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions — a position and its mirror count as one. ',
+      'Count each scramble once no matter how you hold the puzzle — any of the 24 ways — and the Skewb’s 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions. A position and its left-right mirror still count separately, because our solutions are tuned for right-handed turning. ',
       'Paste a scramble to look yours up, or browse by depth and claim one nobody has solved yet.')));
   main.appendChild(h('section', { class: 'progressblock' },
     h('div', { class: 'barwrap', role: 'progressbar', 'aria-valuenow': (pct*100).toFixed(2), 'aria-valuemin': '0', 'aria-valuemax': '100' },
@@ -538,7 +607,7 @@ function sidePanel(side, label, doneSet, exactView) {
   const shownIx = E.idx(shownState);
   side.variants.forEach((v, i) => {
     strip.appendChild(h('button', { class: 'symthumb' + (v.ix === shownIx ? ' on' : ''),
-      title: 'rotation ' + (i + 1) + ' of ' + side.variants.length,
+      title: 'view ' + (i + 1) + ' of ' + side.variants.length,
       onclick: () => symPopup(v, i, side.variants.length),
       html: R.netSVG(v.state, 104, { cls: 'oonet thumb', thumb: true }) }));
   });
@@ -556,9 +625,9 @@ function symPopup(v, i, total) {
   show(false);
   const prevFocus = document.activeElement;          // restore focus here on close
   const closeX = h('button', { class: 'modal-x', 'aria-label': 'close', onclick: () => close() }, '\u00d7');
-  const box = h('div', { class: 'modal-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'rotation view' },
+  const box = h('div', { class: 'modal-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'puzzle view' },
     closeX,
-    h('div', { class: 'symhead' }, 'rotation ' + (i + 1) + ' of ' + total),
+    h('div', { class: 'symhead' }, 'view ' + (i + 1) + ' of ' + total),
     h('div', { class: 'netwrap modal-net', html: R.netSVG(v.state, 280) }),
     scrLine,
     h('button', { class: 'ghost sm', onclick: () => show(true) }, 'show me another scramble'));
@@ -585,39 +654,45 @@ function symPopup(v, i, total) {
 async function pageClass(main, anyId) {
   if (!(anyId >= 0) || anyId >= E.NSLOTS || T.dist[anyId] < 0) { main.appendChild(h('div', { class: 'card error' }, 'That position doesn\u2019t exist. Check the link and try again.')); return; }
   const exact = E.unidx(anyId);
-  const cid = canonOf(exact);          // 24-sym class id == pairId
+  const cid = pairIdOf(exact);         // 48-fold pair id (the page key)
   const pair = pairOf(cid);
   // the URL keeps the exact state that was entered, so the page shows that view — not a rotated
-  // stand-in. Which mirror side it belongs to is decided by the rotation-only canon.
-  const exactSide = (!pair.self && pair.b && T.rotCanonOf(exact) === pair.b.id) ? 'b' : 'a';
+  // stand-in. Which mirror side it belongs to is decided by the hold-24 entry canon.
+  const exactSide = (!pair.self && pair.b && entryOf(exact) === pair.b.id) ? 'b' : 'a';
   const entered = (lastSearch && lastSearch.ix === anyId) ? lastSearch.text : null;
 
   const sols = await DB.pairSolutions(pair.pairId);
+  // an approved solution marks ONLY the side it solves (classId, normalized
+  // through the entry canon via sideIdOf) — never partnerId
   const doneSet = new Set();
-  for (const s of sols) if (s.status === 'approved') { doneSet.add(s.classId); doneSet.add(s.partnerId); }
+  for (const s of sols) if (s.status === 'approved') doneSet.add(sideIdOf(s));
 
+  const shownSide = exactSide === 'b' && pair.b ? pair.b : pair.a;
   main.appendChild(h('div', { class: 'crumbs' },
-    h('a', { href: '#/browse/' + pair.a.depth }, 'depth ' + pair.a.depth), ' / position #' + fmt(pair.a.ord + 1)));
+    h('a', { href: '#/browse/' + pair.a.depth }, 'depth ' + pair.a.depth), ' / position #' + fmt(shownSide.ord + 1)));
 
   const panels = h('section', { class: 'pairrow' + (pair.self ? ' single' : '') },
     sidePanel(pair.a, pair.self ? 'self-mirror position' : 'position', doneSet, exactSide === 'a' ? { state: exact, scramble: entered } : null),
     pair.self ? null : sidePanel(pair.b, 'LR mirror', doneSet, exactSide === 'b' ? { state: exact, scramble: entered } : null));
   main.appendChild(panels);
 
-  /* solutions */
+  /* solutions \u2014 each row belongs to the side it solves (classId); the mirrored
+     column is a generated reference, it does NOT count for the other side */
   const solCard = h('section', { class: 'card solcard' }, h('h3', null, 'Solutions'));
   const approved = sols.filter(s => s.status === 'approved');
+  const apprA = approved.filter(s => sideIdOf(s) === pair.a.id);
+  const apprB = pair.b ? approved.filter(s => sideIdOf(s) === pair.b.id) : [];
   const mine = sols.filter(s => s.status === 'pending');
   if (!approved.length) solCard.appendChild(h('p', { class: 'empty' }, 'Nobody has solved this position yet. Yours could be the first. Submit it below.'));
   for (const s of approved) {
     const shown = dispSol(s), mirrored = dispSolMirror(s);
-    const enteredLeft = s.classId === pair.a.id;
+    const enteredLeft = sideIdOf(s) === pair.a.id;
     solCard.appendChild(h('div', { class: 'solrow' },
       h('div', { class: 'solcell' },
         h('span', { class: 'soltag' }, pair.self ? 'solution' : (enteredLeft ? 'position' : 'mirror')),
         h('code', { class: 'mono sol' }, shown), copyBtn(shown)),
       pair.self ? null : h('div', { class: 'solcell' },
-        h('span', { class: 'soltag auto' }, (enteredLeft ? 'mirror' : 'position') + ' \u00b7 mirrored for you'),
+        h('span', { class: 'soltag auto' }, (enteredLeft ? 'mirror' : 'position') + ' \u00b7 reference only \u2014 mirroring flips handedness, doesn\u2019t count for that side'),
         h('code', { class: 'mono sol' }, mirrored), copyBtn(mirrored)),
       h('div', { class: 'solmeta' }, s.moves + ' moves', s.showName && s.name ? ' \u00b7 by ' + s.name : '')));
   }
@@ -628,12 +703,18 @@ async function pageClass(main, anyId) {
 
   /* submit */
   const sub = h('section', { class: 'card subcard' }, h('h3', null, 'Submit a solution'));
+  // per-SIDE caps: a side with MAX_SOLUTIONS approved solutions is full; the
+  // form disappears only when EVERY side is full.
+  const fullA = apprA.length >= MAX_SOLUTIONS;
+  const fullB = !pair.b || apprB.length >= MAX_SOLUTIONS;
   if (pair.a.depth === 0) {
     // the solved position — counted as done by definition, nothing to submit
     sub.appendChild(h('p', { class: 'empty' }, 'This is the solved position — there’s nothing to solve, so it doesn’t take solutions.'));
-  } else if (approved.length >= MAX_SOLUTIONS) {
-    // Every scramble keeps at most MAX_SOLUTIONS solutions — this one is full.
-    sub.appendChild(h('p', { class: 'empty' }, 'This scramble already has ' + MAX_SOLUTIONS + ' solutions — the maximum. Thanks for looking!'));
+  } else if (fullA && fullB) {
+    // Every side keeps at most MAX_SOLUTIONS solutions — all sides are full.
+    sub.appendChild(h('p', { class: 'empty' }, pair.self
+      ? 'This scramble already has ' + MAX_SOLUTIONS + ' solutions — the maximum. Thanks for looking!'
+      : 'Both sides of this position already have ' + MAX_SOLUTIONS + ' solutions — the maximum. Thanks for looking!'));
   } else if (!DB.user) {
     sub.appendChild(h('p', null, 'You can browse everything without an account. Submitting solutions is limited to moderators — sign in with Google to get started.'));
     sub.appendChild(h('button', { class: 'primary', onclick: () => DB.signIn().catch(() => toast('Sign-in didn’t go through. Please try again.')) }, 'Sign in with Google'));
@@ -642,27 +723,38 @@ async function pageClass(main, anyId) {
     sub.appendChild(requestModBlock());
   } else {
     sub.appendChild(h('p', { style: 'color:var(--mut);font-size:13.5px;margin:.1em 0 .9em' },
-      approved.length + ' of ' + MAX_SOLUTIONS + ' solutions recorded for this scramble.'));
+      pair.self
+        ? apprA.length + ' of ' + MAX_SOLUTIONS + ' solutions recorded for this scramble.'
+        : apprA.length + ' of ' + MAX_SOLUTIONS + ' solutions recorded for the position · ' +
+          apprB.length + ' of ' + MAX_SOLUTIONS + ' for its mirror.' +
+          (fullA ? ' The position side is full — only mirror-side solutions can still go in.'
+                 : fullB ? ' The mirror side is full — only position-side solutions can still go in.' : '')));
     const ta = h('textarea', { class: 'mono solin', rows: '2',
       placeholder: NOTA === 'ns'
         ? "e.g.  R' F R F'   (NS notation \u00b7 rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)"
         : "e.g.  y L U' B2 U L'   (WCA notation \u00b7 rotations x y z free \u00b7 doubles 1 move \u00b7 max 15)" });
-    const status = h('div', { class: 'verifyline' }, 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every rotation of both mirrors.');
+    const status = h('div', { class: 'verifyline' }, 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every way of holding either mirror.');
     const nameRow = h('label', { class: 'namerow' },
       h('input', { type: 'checkbox', checked: '' }), ' show my name (', DB.user.name || DB.user.email, ') on this solution');
     const btn = h('button', { class: 'primary', disabled: '' }, 'Submit for review');
     let lastVerify = null;
+    // a solution that solves an already-full side verifies but can't be
+    // submitted \u2014 only the open side still takes solutions.
+    const sideIsFull = v => v.side === 'a' ? fullA : fullB;
     const onInput = () => {
       const v = verifySolution(ta.value, pair); lastVerify = v;
-      status.className = 'verifyline ' + (v.ok ? 'good' : (ta.value.trim() ? 'bad' : ''));
-      status.textContent = v.ok
+      const ok = v.ok && !sideIsFull(v);
+      status.className = 'verifyline ' + (ok ? 'good' : (ta.value.trim() ? 'bad' : ''));
+      status.textContent = ok
         ? '\u2713 Solves the ' + (pair.self || v.side === 'a' ? 'position' : 'mirror') + ' in ' + v.moves + ' moves. Ready to submit.'
-        : (ta.value.trim() ? v.error : 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every rotation of both mirrors.');
-      if (v.ok) btn.removeAttribute('disabled'); else btn.setAttribute('disabled', '');
+        : v.ok
+          ? 'That solves the ' + (v.side === 'a' ? 'position' : 'mirror') + ' side, which already has ' + MAX_SOLUTIONS + ' solutions \u2014 only the ' + (v.side === 'a' ? 'mirror' : 'position') + ' side is still open.'
+          : (ta.value.trim() ? v.error : 'Type a solution in ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation. We check it as you go, against every way of holding either mirror.');
+      if (ok) btn.removeAttribute('disabled'); else btn.setAttribute('disabled', '');
     };
     ta.addEventListener('input', onInput);
     btn.addEventListener('click', async () => {
-      const v = lastVerify; if (!v || !v.ok) return;
+      const v = lastVerify; if (!v || !v.ok || sideIsFull(v)) return;
       const sideObj = v.side === 'b' && pair.b ? pair.b : pair.a;
       const partner = pair.self ? sideObj : (v.side === 'a' ? (pair.b || pair.a) : pair.a);
       btn.setAttribute('disabled', '');
@@ -759,27 +851,36 @@ async function pageMod(main) {
     // as engine WCA, the solution in its own `notation`); verification always
     // runs on the stored text.
     const v = verifySolution(s.solution, pr, s.notation === 'ns' ? 'ns' : 'wca');
+    // Side integrity: the text must solve the side classId claims. A solution
+    // that only solves the MIRROR side must not be approvable onto this side \u2014
+    // it is the wrong-handed alg for it (mirrors are separate entries since
+    // 2026-07-10). DB.review re-checks this (throws SIDE); gate the UI too.
+    const solvedId = v.ok ? (v.side === 'b' && pr.b ? pr.b.id : pr.a.id) : -1;
+    const sideOk = v.ok && solvedId === sideIdOf(s);
     const row = h('section', { class: 'card modrow' },
       h('div', { class: 'modleft', html: R.netSVG(E.unidx(s.classId), 160, { cls: 'oonet thumb', thumb: true }) }),
       h('div', { class: 'modbody' },
         h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'scramble'), h('code', { class: 'mono scr' }, dispAlg(s.scramble))),
         h('div', { class: 'scrline' }, h('span', { class: 'scrlabel' }, 'solution'), h('code', { class: 'mono sol' }, dispSol(s))),
-        h('div', { class: 'verifyline ' + (v.ok ? 'good' : 'bad') },
-          v.ok ? '\u2713 verified \u00b7 ' + s.moves + ' moves' + (s.notation === 'ns' ? ' \u00b7 typed in NS' : '') + ' \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
-               : '\u2717 fails verification now: ' + v.error)),
+        h('div', { class: 'verifyline ' + (sideOk ? 'good' : 'bad') },
+          sideOk ? '\u2713 verified \u00b7 ' + s.moves + ' moves' + (s.notation === 'ns' ? ' \u00b7 typed in NS' : '') + ' \u00b7 by ' + (s.name || 'anonymous') + (s.showName ? '' : ' (name hidden)')
+               : v.ok ? '\u2717 solves the MIRROR side, not the side this submission claims \u2014 reject it; it needs resubmitting for the right side'
+                      : '\u2717 fails verification now: ' + v.error)),
       h('div', { class: 'modacts' },
-        h('button', { class: 'primary', disabled: v.ok ? null : '', onclick: async ev => {
+        h('button', { class: 'primary', disabled: sideOk ? null : '', onclick: async ev => {
           ev.target.setAttribute('disabled', '');
           try { await DB.review(s.id, 'approved'); toast('Approved. Position marked solved.'); render(); }
           catch (err) {
             toast(err && err.message === 'CAP'
-              ? 'This scramble already has ' + MAX_SOLUTIONS + ' solutions (the maximum). Reject this one instead.'
+              ? 'This side of the scramble already has ' + MAX_SOLUTIONS + ' solutions (the maximum). Reject this one instead.'
+              : err && err.message === 'SIDE'
+              ? 'This text doesn\u2019t solve the side it was submitted for \u2014 reject it instead.'
               : 'Something went wrong approving that. Please try again.');
             ev.target.removeAttribute('disabled');
           }
         } }, 'Approve'),
         h('button', { class: 'danger', onclick: async () => { await DB.review(s.id, 'rejected'); toast('Rejected.'); render(); } }, 'Reject'),
-        h('a', { class: 'ghost', href: '#/c/' + s.pairId }, 'open position')));
+        h('a', { class: 'ghost', href: '#/c/' + s.classId }, 'open position')));
     main.appendChild(row);
   }
   /* moderators \u2014 admin only (managing moderators is restricted to admins) */
@@ -823,8 +924,11 @@ function pageAbout(main) {
   main.appendChild(h('section', { class: 'card prose' },
     h('h2', null, 'How OO solutions work'),
     h('p', null, 'The Skewb has exactly 3,149,280 positions, and every one can be solved in 11 moves or fewer. That part is proven by computer. What a computer can\u2019t tell you is which short solution feels best in your hands. This page collects the community\u2019s pick, one position at a time.'),
-    h('h3', null, 'Positions, rotations and mirrors'),
-    h('p', null, 'Rotating the whole puzzle doesn\u2019t change the solve, and a position and its left\u2013right mirror are the same solve with mirrored algorithms \u2014 so they count as one. Folding the 12 rotations and the mirror together, those 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions. Every position page shows the position and its mirror side by side, each with up to 12 rotation views. Submit a solution to either one and we generate the mirrored version for you; one approved solution marks the whole position as done.'),
+    h('h3', null, 'Positions, holds and mirrors'),
+    // entry count is computed (T.reps.length = 132,315); the page count 66,321 is
+    // machine-verified in tools/verify-space.mjs but hardcoded here — computing it
+    // live needs an ι + mirror sweep over all reps (a multi-second synchronous hitch).
+    h('p', null, 'Re-holding the whole puzzle doesn\u2019t change the solve: pick the same scrambled cube up any of the 24 ways it can sit in your hands, and the same solution works gesture for gesture. So we count positions up to all 24 re-holds: those 3,149,280 scrambles come down to ' + fmt(T.reps.length) + ' positions. A position and its left\u2013right MIRROR stay separate \u2014 mirroring a solution flips its handedness, and the solutions collected here are tuned for right-handed turning \u2014 but the two share one page (66,321 pages in all), shown side by side, each with up to 24 views. A solution counts only for the side it actually solves; we still show its mirrored copy next to it, for reference only.'),
     h('h3', null, 'Notation'),
     h('p', null, 'Everything is written in standard WCA notation by default. The WCA / NS switch in the top bar changes every scramble and solution on the site to NS notation \u2014 the system the Sarah / NS alg sheets use, where each of the eight corners has its own letter.'),
     h('div', { class: 'nottable' },
@@ -832,7 +936,7 @@ function pageAbout(main) {
       nrow('F R B L \u00b7 f r b l', 'NS \u00b7 1 move each', 'uppercase turns the four top corners, lowercase the four bottom corners \u2014 front, right, back, left. WCA R U L B are NS r B l b; NS F f R L twist corners WCA can\u2019t name without a rotation.'),
       nrow('x y z', 'rotations \u00b7 0 moves', 'rotate the whole puzzle 90\u00b0, like on a cube; combine freely \u00b7 the same in both notations')),
     h('h3', null, 'Submitting and review'),
-    h('p', null, 'Submitting solutions is limited to moderators. Solutions can be up to 15 moves and are checked automatically: they have to really solve the scramble, from any rotation, on either mirror. A moderator then reviews each one before it goes live, and we check it again at that point. Each scramble keeps at most ' + MAX_SOLUTIONS + ' solutions, so once two are approved that position is settled.'),
+    h('p', null, 'Submitting solutions is limited to moderators. Solutions can be up to 15 moves and are checked automatically: they have to really solve the scramble, from any way of holding it, on either mirror side — and they’re recorded for the side they solve. A moderator then reviews each one before it goes live, and we check it again at that point. Each side of a scramble keeps at most ' + MAX_SOLUTIONS + ' solutions, so once two are approved that side is settled.'),
     h('h3', null, 'Becoming a moderator'),
     h('p', null, 'Want to help build the collection? Anyone can apply to become a moderator \u2014 moderators are the ones who submit and review solutions.'),
     requestModBlock(),

@@ -59,6 +59,28 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     `NS_CORNER`, render `STICKERS`); `render.js` now uses the same shadowed-module
     IIFE as engine.js/tables.js (the old `typeof module` branch silently skipped
     `window.OORender` under the documented Node window-stub recipe).
+  - **2026-07-10 update (USER decision — mirrors count separately; corrected same day
+    to the machine-verified hold-24 fold):** census re-keyed to the fold of ALL 24
+    PROPER rotations — the engine's 12 tetrad-preserving syms PLUS the 12
+    tetrad-swapping "re-holds", which act on states via the re-anchoring map ι
+    (`E.makeHoldSym` / `E.makeHold24Canon`; ground-truth §Symmetry) — cache key
+    `oo-classes-v4` → **132,315 census entries**. Rationale: the same scramble
+    performed on a solved cube held 90° differently transfers a right-handed solution
+    gesture for gesture (same chirality), so those count as ONE entry; a position and
+    its LR mirror stay SEPARATE (mirroring flips handedness; community solutions are
+    righty-tuned), each with its own ordinal, done-bit, solutions and per-side
+    MAX_SOLUTIONS cap. (An interim same-day pass had used the plain 12-rotation fold,
+    `oo-classes-v3`/262,674 — superseded: it double-counted re-held duplicates.)
+    Pages pair a position with its mirror via the full 48-group `pairId`
+    (`E.makeFull48Canon`, the Firestore `pairSolutions` query key) → **66,321 pages**,
+    327 of them single-side (self-mirror); `variantsOf` shows up to 24 views (12
+    rotations of the rep + 12 of ι(rep)). pairId SEMANTICS changed (48-fold ids ≠ the
+    old 24-sym ids), but consumers re-derive everything from `classId` and only query
+    by pairId — the doc field set is unchanged, no rules redeploy. Migration: the
+    admin "Recompute solved bitmap" must run after deploy (older doneMaps index a
+    different enumeration and are discarded by a size guard). Oracles:
+    tools/verify-space.mjs (both ι routes cross-checked, involution/depth/chirality,
+    132,315 + exact per-depth table, 1,956/108/327 fixed counts, 66,321).
 - [x] **M4 — Firebase** (2026-07-03 agent side; USER console steps completed 2026-07-06).
   Project **`skewbiks`** + web app created via MCP; creds in `js/config.js` (demo mode
   off); `.firebaserc` pins the project; rules deployed (verified byte-identical via
@@ -408,6 +430,27 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     Ground truth §Notation notes rewritten accordingly (engine hold reading
     physically falsified; the ~12 % coverage gap is a property of the
     sheets, not an artifact).
+  - **RubiksSkewb layer display (2026-07-10, USER: "the layer notation should
+    be in RubiksSkewb notation and it shouldn't have L l F f moves; also have
+    rotations at the start as well"): the whole reconstruction now reads
+    `[lead rotation] [first layer {R,B,r,b}] [setup rotation] [finish alg]`,
+    all in NS.** The layer is emitted by a new `emitNS` over the four
+    right-side corner names {R,B,r,b} — one name per space diagonal, so every
+    move is expressible and L/l/F/f never appear (the sheets' own alg
+    vocabulary). The lead rotation is chosen (nicest sheet spelling among the
+    24) so the built layer lands on the bottom, matching the sheets and the
+    trainer; a leading rotation genuinely reorients the build (verified: not
+    cosmetic — the walk renaming isn't a clean inverse), so methodView derives
+    the lead AND the finish setup rotation together and physically re-proves
+    the whole line. Search dropped its per-path rotation bookkeeping
+    (walkIdxOf/MUL24/emitPhysPerm/emitWCA all deleted) — it only finds
+    rotation-closed matches now; all display rotations live in methodView.
+    Verified over 11,482 solutions: 0 with L/l/F/f, 0 layers off the bottom,
+    all physically proven; the three USER solves re-pin as full lines (e.g.
+    `z' b' B r R' B r b x r' R r R'`). test:solver → 18 tests (emitNS
+    vocabulary + native-move reproduction from all 24 holds; every fixture
+    solution independently reassembled from its lead/first/rot/alg fields and
+    re-proved; the three USER full lines pinned).
   - **Same-day post-review fixes (multi-agent review, 14 confirmed findings,
     1 refuted):** solver-core — `canonIndex` seeds ALL authored canons from
     `CNAME` before indexing y-quarter neighbours (3 cases previously displayed
@@ -429,6 +472,59 @@ new Firebase project; domain skewbiks.com (GitHub Pages, CNAME).
     canonIndex/CNAME regression, fin=0 rotation guard). Re-verified end to
     end: all runners green, `--scan 200` (147/147 finishes named, 0
     failures, worst 160 ms), build + `check:fresh` green, E2E 10/10.
+  - **Held-facelets fix (2026-07-10, USER-falsified at the table: scramble
+    `B' R L U' L' B' R' U'` printed lead `y′` — failed; `x` worked): the
+    reconstruction now derives from the facelets the human ACTUALLY HOLDS.**
+    Third member of the walk-rotation bug family: the SCRAMBLE text's own
+    written free-corner letters (this one has two `B'`) leave 240° whole-cube
+    rotations the engine absorbs into its parsing frame, so the pinned
+    state's raw facelets sit G-rotated in hand — every printed lead was
+    wrong by G exactly on scrambles with a net written-B twist ("sometimes
+    incorrect"). G is a property of the TEXT (unrecoverable from the state
+    for NS scrambles), so solver.js now passes `C.heldFacelets(UI.parsed)` =
+    physPerm of the parsed scramble into `methodView(scr, item, heldFl)`;
+    methodView computes G = raw→held, emits/engine-verifies the layer from
+    the orientation G∘lead, prints just the lead, and re-proves the whole
+    line from the held facelets (row-less first steps re-emit from G's own
+    orientation — no lead needed, solved is rotation-closed). State-only
+    callers (`--scan`'s native-move scrambles, the USER junction pins)
+    default to raw facelets ≡ pre-fix behaviour, so the three pinned lines
+    are unchanged. test:solver 18 → 19: the counterexample is pinned three
+    ways (corrected line `y r' R r' B b y' z R r R' r'` proves from the
+    held facelets, the USER's hand-verified `x R' r b' r B y z R r R' r'`
+    proves, the pre-fix `y′` line refutes); all fixture reassembly proofs
+    now run from the held facelets.
+  - **Algorithms-page rework (2026-07-10, USER: case images in the standard
+    alg-sheet format, solved layer on the bottom, starting rotations updated
+    where the picture changes).** Two machine findings first: (a) the stored
+    `ns` fields are VERBATIM sheet strings — 916/928 mid-rotation texts
+    solve their WCA-field case state ONLY under the sheet-letter rotation
+    reading, ZERO under the engine reading (the docs' "stored texts are
+    engine-letter" claim was false) — so the solver's finish index had been
+    mis-indexing all 916 parseable mid-rotation bodies (the other 12 are the
+    slash texts that never parse into the index); fixed with `physPermNS`
+    (sheet-letter physical perm), after which finish coverage is essentially
+    COMPLETE (3,109/3,110 fl, 11,964/11,964 tcll, 3,204/3,204 eg2 — the
+    "≈12 % gap" was that artifact; index 65,640→58,608 pre-states, entries
+    3,082×24 unchanged); (b) the page was rendering case images from
+    `toFixedFacelets` (the WCA re-anchor) while the trainer/solver had
+    already standardized on the pinned layer-down frame. New display
+    machinery in solver-core: `layerDownFacelets(state)` (raw pinned
+    facelets, rotated by the nicest sheet rotation to put the built layer on
+    D — direct D-anchored membership first, since `targets` keeps one face
+    per state and can shadow a D layer near solved) and
+    `sheetLineFor(heldFl, text)` (authored text VERBATIM when it physically
+    proves from the picture — all standard groups, since the sheets author
+    against the raw pinned hold — else the folded body behind the nicest
+    re-derived lead). Sweep over all 1,420 presentation groups: 9 pictures
+    rotated, 3,073 texts verbatim, 9 re-derived leads, 34 unparseable slash
+    texts shown as authored (flagged ⟳ only in rotated groups). algs.js
+    draws `R.caseSVG` (the standard development view) from the pictured
+    facelets with a pinned-net fallback; algs.html now loads solver-core.
+    test:solver → 20 tests (sheet-reading corpus anchor over all 3,082
+    texts against the WCA-field states; the display sweep pinned
+    1420/9/3073/9/34 with every displayed line re-proved by a fresh parse
+    from the pictured facelets).
 - [ ] **M8 — Launch polish.** Home copy/cards final, Skewb logo + og image + touch icon
   (headless-Edge render recipe), robots/sitemap already point at skewbiks.com, SETUP/README
   final, pre-announce checklist (deployed-rules diff, Firebase authorized domains incl.
@@ -471,7 +567,10 @@ approval cap check is best-effort/racy by design (documented at the call site).
 ## Recorded numbers (from M1 verification — use these, don't recompute by hand)
 
 3,149,280 reachable states; depth histogram = OEIS A079745 (max 11, 90 antipodes);
-262,674 rotation classes; **131,391 census positions (24-sym fold — what oo.html counts)**,
-of which 108 are self-mirror; NSLOTS/rules bound 9,447,840;
-per-depth ROTATION-class counts 1/2/4/24/144/854/4,943/26,272/102,155/121,404/6,852/19
-(the census's per-depth counts are the 24-fold ones shown on the Browse tab).
+fold ladder (machine-verified 2026-07-10): 262,674 (12 rotations) → **132,315 hold-24
+entries (all 24 proper rotations — what oo.html counts as of 2026-07-10; mirrors
+separate)** vs 131,391 (12 rots + mirrors, the pre-2026-07-10 census) → **66,321 pages**
+(full 48-group `pairId`), of which 327 are self-mirror; ι fixes 1,956 of the 262,674
+rotation classes, the mirror involution 108; NSLOTS/rules bound 9,447,840;
+per-depth CENSUS (hold-24) counts 1/2/4/16/80/444/2,514/13,254/51,374/61,115/3,500/11
+(the Browse tab's per-depth counts — depth 1 shows 2, the CW and CCW classes).

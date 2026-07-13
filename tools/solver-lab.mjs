@@ -2,11 +2,10 @@
  *
  * Runs js/solver-core.js on real scrambles exactly as solver.html does (same
  * dist table, same alg data, same defaults) and prints the movecount-organized
- * solutions — first step, setup rotation (the alg's own leading rotations are
- * folded into it; derived in the core's PHYSICAL facelet model and spelled in
- * the sheets' letters, never engine letters), and the sheet's algorithm from
- * its first turn on — every emitted line carries the core's physical facelet
- * proof (mv.ok). Lets us judge caps without a browser.
+ * solutions in RubiksSkewb notation — leading rotation (builds the layer on
+ * the bottom), first layer in {R,B,r,b}, setup rotation, and the sheet's
+ * algorithm — every emitted line carries the core's physical facelet proof
+ * (mv.ok). Lets us judge caps without a browser.
  *
  *   node tools/solver-lab.mjs                      # default scramble set
  *   node tools/solver-lab.mjs "R U' B L' U R' B'"  # one scramble
@@ -45,6 +44,7 @@ function runOne(scramble, tuning, top, lensShown) {
   const parsed = E.parseAlg(scramble);
   if (!parsed) { console.log(`!! could not parse: ${scramble}`); return; }
   const state = E.applyParsed(parsed, E.solved(), C.syms, C.rotBy);
+  const heldFl = C.heldFacelets(parsed);   // the cube as scrambled in hand (per TEXT)
   const dopt = dist[E.idx(state)];
   console.log('\n' + '='.repeat(78));
   console.log(`SCRAMBLE  ${scramble}`);
@@ -56,15 +56,16 @@ function runOne(scramble, tuning, top, lensShown) {
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   const lens = Object.keys(res.byLength).map(Number).sort((a, b) => a - b);
   let bad = 0, n = 0;
-  for (const L of lens) for (const it of res.byLength[L]) { n++; if (!C.methodView(state, it).ok) bad++; }
+  for (const L of lens) for (const it of res.byLength[L]) { n++; if (!C.methodView(state, it, heldFl).ok) bad++; }
 
   for (const L of lens.slice(0, lensShown)) {
     const items = res.byLength[L];
     console.log(`\n  ${L} moves${L === dopt ? ' (optimal)' : ''} — ${items.length} solution(s)`);
     items.slice(0, top).forEach((it, i) => {
-      const mv = C.methodView(state, it);
+      const mv = C.methodView(state, it, heldFl);
       if (!mv.ok) { console.log(`    #${i + 1}  !! VERIFY FAILED`); return; }
-      console.log(`    #${i + 1}  [${METHOD_LABEL[it.id]} ${it.v}+${it.fin}]  ${mv.vmoves || '—'}${mv.rot ? '  | ' + mv.rot : ''}  |  ${mv.alg || '—'}${mv.name ? '   (' + mv.name + (mv.rating ? ' · ' + mv.rating : '') + ')' : ''}`);
+      const lead = mv.lead ? mv.lead + ' | ' : '';
+      console.log(`    #${i + 1}  [${METHOD_LABEL[it.id]} ${it.v}+${it.fin}]  ${lead}${mv.first || '—'}${mv.rot ? ' | ' + mv.rot : ''}  |  ${mv.alg || '—'}${mv.name ? '   (' + mv.name + (mv.rating ? ' · ' + mv.rating : '') + ')' : ''}`);
     });
   }
   if (lens.length > lensShown) console.log(`  … ${lens.length - lensShown} more move counts`);
@@ -133,6 +134,7 @@ if (si >= 0) {
     let best = null;
     for (const L of lens) for (const it of res.byLength[L]) {
       sols++;
+      // native-move scrambles: raw facelets ARE the hold (methodView default)
       if (!C.methodView(st, it).ok) { badVerify++; continue; }
       if (!best) best = { it, L };
     }

@@ -132,6 +132,47 @@ function netSVG(state, width, opts) {
     renderView(fl, M_FRONT, 0, 0, mask) + renderView(fl, M_BACK, 3.7, 0, mask) + caps + '</svg>';
 }
 
+/* ---- case view: the standard alg-sheet development (layer-down) ---- */
+// The community's bat-shaped case diagram — the geometry of the Meep/Sarah
+// sheet images (meep.cubing.net clleg/l2c, sarah.cubing.net skewb, the TCLL
+// sheets), lifted pixel-exactly from the original 175×103 PNGs and
+// machine-verified against two of them (2026-07-10): an isometric cube
+// viewed at its FR vertical edge — U in plan view on top (its 45° center
+// square reads as the axis-aligned rectangle), F and R the two front
+// parallelograms meeting at the center vertical — with the L and B faces
+// unfolded flat as wings around the FL / RB vertical edges. The D face (the
+// built layer) is hidden. Callers pass FACELETS, not a state: the picture
+// may be any whole-cube rotation of a state, and the pictured hold is
+// exactly what the displayed alg texts run from.
+// Lattice: vertex (i,j), i,j ∈ 0..8, at page (i·u, j·v) with v = u/√3
+// (the original PNGs round 21:12; the ideal ratio is drawn here).
+const CASE_POLYS = (() => {
+  // per face: center quad first, then one triangle per cube corner
+  const T = {
+    U: [[[3,1],[5,1],[5,3],[3,3]], ['UBL',[4,0],[5,1],[3,1]], ['UBR',[6,2],[5,1],[5,3]], ['UFR',[4,4],[3,3],[5,3]], ['UFL',[2,2],[3,1],[3,3]]],
+    F: [[[3,3],[4,6],[3,7],[2,4]], ['UFL',[2,2],[3,3],[2,4]], ['UFR',[4,4],[3,3],[4,6]], ['DFR',[4,8],[3,7],[4,6]], ['DFL',[2,6],[2,4],[3,7]]],
+    R: [[[5,3],[4,6],[5,7],[6,4]], ['UBR',[6,2],[5,3],[6,4]], ['UFR',[4,4],[5,3],[4,6]], ['DFR',[4,8],[5,7],[4,6]], ['DBR',[6,6],[6,4],[5,7]]],
+    L: [[[1,1],[2,4],[1,5],[0,2]], ['UBL',[0,0],[1,1],[0,2]], ['UFL',[2,2],[1,1],[2,4]], ['DFL',[2,6],[2,4],[1,5]], ['DBL',[0,4],[0,2],[1,5]]],
+    B: [[[7,1],[6,4],[7,5],[8,2]], ['UBL',[8,0],[7,1],[8,2]], ['UBR',[6,2],[7,1],[6,4]], ['DBR',[6,6],[6,4],[7,5]], ['DBL',[8,4],[8,2],[7,5]]],
+  };
+  const out = [];
+  for (const f of Object.keys(T)) {
+    const [center, ...tris] = T[f];
+    out.push({ fi: FIDX[f] * 5, pts: center });
+    for (const [c, ...pts] of tris)
+      out.push({ fi: FIDX[f] * 5 + 1 + E.STICKER_POS[f].indexOf(c), pts });
+  }
+  return out;
+})();
+function caseSVG(fl, width, opts) {
+  const o = opts || {};
+  const v = 1 / Math.sqrt(3), m = 0.06;
+  const polys = CASE_POLYS.map(s =>
+    `<polygon points="${s.pts.map(p => p[0].toFixed(4) + ',' + (p[1] * v).toFixed(4)).join(' ')}" fill="${COLORS[FACES[fl[s.fi]]]}" stroke="#10141c" stroke-width="0.05" stroke-linejoin="round"/>`);
+  const W = 8 + 2 * m, H = 8 * v + 2 * m;
+  return `<svg viewBox="${-m} ${-m} ${W.toFixed(4)} ${H.toFixed(4)}" width="${width}" height="${Math.round(width * H / W)}" class="${o.cls || 'oonet'}" role="img" aria-label="case, alg-sheet view">` + polys.join('') + '</svg>';
+}
+
 /* ---- 3D view: one orbitable cube ---- */
 function iso3dSVG(state, width, yawOrM, pitch, opts) {
   const o = opts || {};
@@ -142,5 +183,5 @@ function iso3dSVG(state, width, yawOrM, pitch, opts) {
 
 const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.45 }; // shows U, L and F from a little above (WCA-hold side)
 
-module.exports = { netSVG, iso3dSVG, viewMatrix, rotateView, DEFAULT_VIEW };
+module.exports = { netSVG, iso3dSVG, caseSVG, viewMatrix, rotateView, DEFAULT_VIEW };
 window.OORender = module.exports;})();

@@ -45,9 +45,12 @@ service cloud.firestore {
       // `notation` records which system the solution text is written in — the
       // client re-verifies in that notation ("R' L R L'" parses in both but
       // means different corners).
-      // NOTE: the "max 2 approved solutions per scramble" cap can't be enforced
-      // here — rules can't count sibling docs — so it's applied app-side in js/oo.js
-      // (submit form gating + the moderator approval step).
+      // NOTE: the "max 2 approved solutions" cap is PER SCRAMBLE SIDE (each side
+      // of a mirror pair — one census entry, the hold-24 class re-derived from
+      // `classId` — keeps its own cap; the pair's two sides count separately as
+      // of 2026-07-10). It can't be enforced here — rules can't count sibling
+      // docs — so it's applied app-side in js/oo.js (submit form gating + the
+      // moderator approval step).
       allow create: if isMod()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'pending'

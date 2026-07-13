@@ -454,6 +454,35 @@ t('optimalScramble: inverse of an optimal solution; re-solves to solved', () => 
   return true;
 });
 
+// ---------------- hold ("re-hold") symmetry — the hold-24 census fold ----------------
+// Full oracle battery (both ι routes, 132,315/66,321/1,956/108/327 counts)
+// lives in tools/verify-space.mjs; here the cheap invariants are pinned.
+t('makeHoldSym: ι is a depth-preserving state-level involution, identity on solved', () => {
+  const hold = E.makeHoldSym(SYMS);
+  if (!E.eq(hold.iota(E.solved(), dist), E.solved())) return false;
+  for (let i = 0; i < 25; i++) {
+    const s = rndState();
+    const t2 = hold.iota(s, dist);
+    if (dist[E.idx(t2)] !== dist[E.idx(s)]) return false;
+    if (!E.eq(hold.iota(t2, dist), s)) return false;
+  }
+  return true;
+});
+t('makeHold24Canon/makeFull48Canon: invariant under rotations, ι and (48) mirrors', () => {
+  const hold = E.makeHoldSym(SYMS);
+  const h24 = E.makeHold24Canon(SYMS, dist), f48 = E.makeFull48Canon(SYMS, dist);
+  for (let i = 0; i < 10; i++) {
+    const s = rndState();
+    const c = h24(s), f = f48(s);
+    const sym = SYMS.rots[1 + Math.floor(Math.random() * (SYMS.rots.length - 1))];
+    if (h24(sym.apply(s)) !== c) return false;
+    if (h24(hold.iota(s, dist)) !== c) return false;
+    if (f48(SYMS.mirrors[0].apply(s)) !== f) return false;
+    if (f > c) return false;                 // the 48-orbit contains the 24-orbit
+  }
+  return true;
+});
+
 console.log('');
 console.log(passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed ? 1 : 0;

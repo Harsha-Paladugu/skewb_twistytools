@@ -1,14 +1,18 @@
-/* Skewbiks.com — solver-core unit tests (M7; physical-model rework 2026-07-07).
+/* Skewbiks.com — solver-core unit tests (M7; physical-model rework 2026-07-07,
+ * RubiksSkewb layer display 2026-07-10).
  *
  * Asserts the method solver's substrate: the first-step target spaces (counts
  * pinned by the 2026-07-07 machine probe + membership of every imported sheet
- * case), the frame-aware WCA emitter and its physical-execution twin, the
- * PHYSICAL finish index (texts fold their leading rotations into the setup;
- * per text the index holds Φ⁻¹ of the 24 solved orientations; junctions match
- * under 24 rotations from the junction the HUMAN holds), and the search —
- * every emitted solution's method view carries a physical facelet proof, the
- * three USER-validated junction rotations (y' z / y x' / y2 z) are pinned
- * end-to-end, and constructed decompositions must be found.
+ * case), the RubiksSkewb layer emitter (only {R,B,r,b}, reproduces the native
+ * moves from every hold), the PHYSICAL finish index (texts fold their leading
+ * rotations into the setup; per text the index holds Φ⁻¹ of the 24 solved
+ * orientations; junctions match under 24 rotations), and the search — every
+ * emitted solution's method view is physically re-proved AND independently
+ * reassembled FROM THE HELD FACELETS (physPerm of the scramble text — the raw
+ * pinned facelets sit rotated in hand when the text has written free-corner
+ * letters; USER bug report 2026-07-10, pinned below), its layer is {R,B,r,b}
+ * on the bottom, the three USER-reported solves are pinned as full lines, and
+ * constructed decompositions must be found.
  *
  * Run: node tools/test-solver.mjs   (exit 0 = OK, 1 = a test failed)
  * Builds the full BFS distance table once (~30 s), like test-trainer.
@@ -45,7 +49,6 @@ const dist = buildDist(E);
 const C = makeSolverCore(E, dist, algData);
 const { syms, rotBy } = C;
 const IDS = Object.keys(METHOD_DEFS);
-const pThen = (P, Q) => Q.map(q => P[q]);           // "apply P, then Q"
 
 /* ---------- target spaces ---------- */
 t('method registry: fl/tcll/eg2 with priority order', () => {
@@ -95,17 +98,24 @@ t('target faces: solved state carries a face; faces are valid letters', () => {
     if (!E.FACES.includes(face)) throw new Error(id + ': ' + face);
 });
 
-/* ---------- emitters + the physical model ---------- */
-t('emitWCA at the identity frame == engine nativeToWCA', () => {
-  for (let trial = 0; trial < 200; trial++) {
-    const mis = []; for (let i = 0; i < 12; i++) mis.push(rndInt(8));
-    const mine = C.emitWCA(mis).tokens.join(' ');
-    const eng = E.nativeToWCA(mis.map(m => E.MOVES[m]).join(' '));
-    if (mine !== eng) throw new Error(mine + ' vs ' + eng);
+/* ---------- the RubiksSkewb layer emitter + the physical model ---------- */
+const ONLY_RIGHT = /^(?:[RBrb]'?(?:\s+|$))+$/;         // NS layer vocabulary: only R B r b
+t('emitNS: only {R,B,r,b}, reproduces the native moves, from every one of the 24 holds', () => {
+  for (let trial = 0; trial < 300; trial++) {
+    const mis = []; for (let i = 0; i < 1 + rndInt(8); i++) mis.push(rndInt(8));
+    const target = E.solved(); for (const m of mis) E.applyMoveIdx(target, m);
+    for (const lead of C.LEAD) {
+      const str = C.emitNS(mis, lead.frame).tokens.join(' ');
+      if (str && !ONLY_RIGHT.test(str)) throw new Error('forbidden letter: ' + str);
+      // the leading rotation (engine spelling) + the moves engine-land the native moves
+      const line = (lead.engStr ? lead.engStr + ' ' : '') + str;
+      const s = E.applyParsed(E.parseAlg(E.preprocessAlg(line), 'ns'), E.solved(), syms, rotBy);
+      if (!E.eq(s, target)) throw new Error('emitNS mismatch from ' + (lead.engStr || 'id'));
+    }
   }
 });
-t('ROT24: 24 distinct orientations, identity first, sheet spellings are rotation tokens', () => {
-  if (C.ROT24.length !== 24 || C.ROT24[0].spell !== '') throw new Error(C.ROT24.map(r => r.spell).join(','));
+t('ROT24 + LEAD: 24 orientations (identity first, sheet spellings); LEAD covers all 24 holds', () => {
+  if (C.ROT24.length !== 24 || C.ROT24[0].spell !== '') throw new Error('ROT24 head');
   const seen = new Set();
   for (const r of C.ROT24) {
     for (const tok of r.spell.split(/\s+/).filter(Boolean))
@@ -113,42 +123,31 @@ t('ROT24: 24 distinct orientations, identity first, sheet spellings are rotation
     seen.add(r.perm.join(','));
   }
   if (seen.size !== 24) throw new Error('duplicate perms: ' + seen.size);
+  if (C.LEAD.length !== 24) throw new Error('LEAD length ' + C.LEAD.length);
+  const frames = new Set(C.LEAD.map(l => JSON.stringify(l.frame.fp)));
+  if (frames.size !== 24) throw new Error('LEAD frames not distinct: ' + frames.size);
 });
-t('physical corpus anchor: every imported text solves its identity pre-state physically', () => {
-  // physical execution = fixed hand positions + fixed-axis rotations; must end
-  // solved (any orientation) from the engine's identity pre-state — this is
-  // the semantic bridge between the corpus-validated engine reading and the
-  // facelet model (machine-discriminated: the grip-relative alternative
-  // passes only 641 of these)
+t('physical corpus anchor: every imported text solves its WCA-field case state under the SHEET reading', () => {
+  // The authored ns fields are VERBATIM sheet strings (importer keeps the
+  // source untouched), so rotation tokens are SHEET letters. physPermNS must
+  // solve each text's case state — caseStateOf(alg), the WCA field, an
+  // INDEPENDENT ground truth — from its raw pinned facelets, in any final
+  // orientation. Machine-established 2026-07-10: of the 928 mid-rotation
+  // texts, 916 pass ONLY under this reading (12 are the unparseable slash
+  // texts) and ZERO under the engine-letter reading physPerm used before.
   const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
   let checked = 0;
   for (const key of Object.keys(subs)) for (const c of subs[key].cases || [])
     for (const a of c.algs || []) {
       const toks = E.parseAlg(E.preprocessAlg(a.ns || a.alg), 'ns');
       if (!toks) continue;
-      const sT = E.inverseState(E.applyParsed(toks, E.solved(), syms, rotBy));
-      const end = C.pApply(E.toFacelets(sT), C.physPerm(toks));
+      const st = E.caseStateOf(a.alg);
+      if (!st) throw new Error('no case state: ' + a.alg);
+      const end = C.pApply(E.toFacelets(st), C.physPermNS(toks));
       if (!C.SOLVED24_KEYS.has(C.flKey(end))) throw new Error('not solved physically: ' + (a.ns || a.alg));
       checked++;
     }
   if (checked !== 3082) throw new Error('checked ' + checked + ' texts (want 3082)');
-});
-t('emitPhysPerm == physical execution of the DISPLAYED step; walkIdxOf factors it', () => {
-  const NS_OF_AXIS = { UBR: 'B', DBL: 'l', DFR: 'r', UFL: 'F' };
-  const NATIVE_AXIS = ['UBR', 'UBR', 'DBL', 'DBL', 'DFR', 'DFR', 'UFL', 'UFL'];
-  for (let trial = 0; trial < 200; trial++) {
-    const mis = []; for (let i = 0; i < 1 + rndInt(7); i++) mis.push(rndInt(8));
-    const emitted = C.emitPhysPerm(mis);
-    // (a) equals physPerm of the parsed displayed NS text
-    const nsText = E.wcaToNS(C.emitWCA(mis).tokens.join(' '));
-    const viaText = C.physPerm(E.parseAlg(E.preprocessAlg(nsText), 'ns'));
-    if (emitted.join(',') !== viaText.join(',')) throw new Error('emitPhysPerm != displayed-text physPerm');
-    // (b) equals the native physical perm followed by the walk rotation
-    const natText = mis.map(m => NS_OF_AXIS[NATIVE_AXIS[m]] + ((m & 1) ? "'" : '')).join(' ');
-    const nat = C.physPerm(E.parseAlg(natText, 'ns'));
-    const rhs = pThen(nat, C.ROT24[C.walkIdxOf(mis)].perm);
-    if (emitted.join(',') !== rhs.join(',')) throw new Error('walk factorization fails');
-  }
 });
 
 /* ---------- the physical finish index (leading rotations folded) ---------- */
@@ -168,9 +167,13 @@ t('foldLeadRots: cuts plain leading rotations; grouped/odd texts fall back untou
     if (got !== want) throw new Error(`"${inp}" -> "${got}" (want "${want}")`);
   }
 });
-t('alg index: 65,640 pre-states / 73,968 entries; texts lead with a turn; entries re-prove physically', () => {
+t('alg index: 58,608 pre-states / 73,968 entries; texts lead with a turn; entries re-prove physically', () => {
+  // 65,640 -> 58,608 with the sheet-letter Φ (2026-07-10): the 928
+  // mid-rotation bodies now index at their TRUE pre-states, which collide
+  // with other texts' far more often. Entries stay 3,082 × 24 (no text is
+  // rotation-symmetric under either reading).
   const idx = C.algIndex();
-  if (idx.size !== 65640) throw new Error('size ' + idx.size);
+  if (idx.size !== 58608) throw new Error('size ' + idx.size);
   let entries = 0; for (const l of idx.values()) entries += l.length;
   if (entries !== 73968) throw new Error('entries ' + entries);
   const keys = [...idx.keys()];
@@ -186,12 +189,14 @@ t('alg index: 65,640 pre-states / 73,968 entries; texts lead with a turn; entrie
     }
   }
 });
-t('physical-finish coverage over the method spaces: 2733/3110 fl, 10392/11964 tcll, 3180/3204 eg2', () => {
-  // measured under the physical model 2026-07-07 (identical counts to the old
-  // engine-frame index — the match RELATION agreed; the printed rotations did
-  // not). Update deliberately when the alg data changes.
+t('physical-finish coverage over the method spaces: 3109/3110 fl, 11964/11964 tcll, 3204/3204 eg2', () => {
+  // re-measured 2026-07-10 with the sheet-letter Φ: coverage is essentially
+  // COMPLETE. The old 2733/10392/3180 "≈12% gap" was an artifact of reading
+  // the 928 mid-rotation ns bodies with engine letters — those texts were
+  // indexed at states no junction ever hits. Update deliberately when the
+  // alg data changes.
   const idx = C.algIndex();
-  for (const [id, want, total] of [['fl', 2733, 3110], ['tcll', 10392, 11964], ['eg2', 3180, 3204]]) {
+  for (const [id, want, total] of [['fl', 3109, 3110], ['tcll', 11964, 11964], ['eg2', 3204, 3204]]) {
     let cov = 0;
     const seen = new Set();
     for (const st of C.dAnchored(id)) for (const rot of syms.rots) {
@@ -226,10 +231,28 @@ const NS_BODIES = (() => {  // display-membership oracle: every shipped text's t
     }
   return s;
 })();
+const isRot = s => s === '' || s.split(/\s+/).filter(Boolean).every(t => /^[xyz](2'|2|')?$/.test(t));
+// independent physical proof of a displayed reconstruction, reassembled from
+// its SEPARATE fields (lead / first / setup rot / alg) and executed from the
+// facelets the human actually HOLDS (heldFl — physPerm of the scramble text,
+// NOT the state's raw facelets): rotations are SHEET letters, layer + alg are
+// NS twists — must land a solved cube in any orientation.
+// physPermNS: displayed bodies are authored ns texts (sheet rotation letters);
+// the layer field is pure letters, identical under either reading
+const nsPerm = txt => C.physPermNS(E.parseAlg(E.preprocessAlg(txt), 'ns'));
+function displayedSolves(heldFl, mv) {
+  let P = heldFl;
+  if (mv.lead) P = C.pApply(P, C.sheetStrPerm(mv.lead));
+  if (mv.first) P = C.pApply(P, nsPerm(mv.first));
+  if (mv.alg) { if (mv.rot) P = C.pApply(P, C.sheetStrPerm(mv.rot)); P = C.pApply(P, nsPerm(mv.alg)); }
+  return C.SOLVED24_KEYS.has(C.flKey(P));
+}
 const runFixture = (scr) => {
-  const state = E.applyParsed(E.parseAlg(scr), E.solved(), syms, rotBy);
+  const parsed = E.parseAlg(scr);
+  const state = E.applyParsed(parsed, E.solved(), syms, rotBy);
+  const heldFl = C.heldFacelets(parsed);
   const res = C.search(state, { methods: { fl: true, tcll: true, eg2: true }, caps: {} });
-  return { state, dopt: dist[E.idx(state)], res };
+  return { state, heldFl, dopt: dist[E.idx(state)], res };
 };
 t('fixtures: solutions exist, none truncated', () => {
   for (const scr of FIXTURES) {
@@ -238,72 +261,136 @@ t('fixtures: solutions exist, none truncated', () => {
     if (!Object.values(res.byLength).some(items => items.length)) throw new Error(scr + ': no solutions');
   }
 });
-t('fixtures: every solution proves physically; algebra holds; alg text is a sheet body', () => {
+t('fixtures: every solution proves physically; layer is {R,B,r,b} on the bottom; alg is a sheet body', () => {
   for (const scr of FIXTURES) {
-    const { state, res } = runFixture(scr);
+    const { state, heldFl, res } = runFixture(scr);
     for (const [L, items] of Object.entries(res.byLength)) for (const it of items) {
       if (it.total !== +L || it.v + it.fin !== it.total) throw new Error('bucket algebra');
       if (it.v !== it.pmoves.length) throw new Error('v vs pmoves');
       if (it.v > METHOD_DEFS[it.id].cap) throw new Error('over cap ' + it.id);
-      const mv = C.methodView(state, it);
+      const mv = C.methodView(state, it, heldFl);
       if (!mv || !mv.ok) throw new Error('method view fails: ' + it.id + ' total ' + L);
+      if (mv.first && !ONLY_RIGHT.test(mv.first)) throw new Error('layer uses a forbidden letter: ' + mv.first);
+      if (!isRot(mv.lead) || !isRot(mv.rot)) throw new Error('non-rotation shown: ' + mv.lead + ' / ' + mv.rot);
+      if (!displayedSolves(heldFl, mv)) throw new Error('displayed line does not physically solve: ' + mv.text);
       if (it.row) {
         if (mv.alg !== it.row.ns) throw new Error('alg text differs from the indexed row');
         const p = E.parseAlg(E.preprocessAlg(mv.alg), 'ns');
-        if (!p || p[0].kind === 'rot') throw new Error('alg text still leads with a rotation: ' + mv.alg);
+        if (!p || p[0].kind === 'rot') throw new Error('alg text leads with a rotation: ' + mv.alg);
         if (!NS_BODIES.has(JSON.stringify(p))) throw new Error('alg text is not a sheet body: ' + mv.alg);
         if (E.countMoves(E.parseAlg(E.preprocessAlg(mv.text), 'ns')) !== it.total) throw new Error('text movecount');
-        if (mv.rot !== C.ROT24[it.rotIdx].spell) throw new Error('rot spelling mismatch');
+        if (mv.face !== 'D') throw new Error('built layer not on the bottom: ' + mv.face);
       } else {
-        if (it.fin !== 0 || mv.rot || mv.alg) throw new Error('solved junction shape');
+        if (it.fin !== 0 || mv.rot || mv.alg || mv.lead) throw new Error('solved junction shape');
       }
     }
   }
 });
 
-/* ---------- the USER-validated junction rotations (2026-07-07) ---------- */
-// Three physically-executed data points from the site owner; the old
-// engine-frame derivation got #2 wrong ("y x") and pre-fix #1 read "y x".
-t('USER fixture 1: "B\' l r l\' b r l" + Pi Triple Sledge 135 prints rotation "y\' z"', () => {
-  const L1 = "B' l r l' b r l y x r' R r R'";        // the engine-letter line of the original report
-  const scr = E.inverseState(E.applyParsed(E.parseAlg(E.preprocessAlg(L1), 'ns'), E.solved(), syms, rotBy));
-  const res = C.search(scr, { methods: { fl: true, tcll: true, eg2: true }, caps: {} });
+/* ---------- the USER-reported solves, re-pinned to the RubiksSkewb display ---------- */
+// Three junctions the site owner physically executed (2026-07-07). The display
+// was reworked 2026-07-10 (layer in {R,B,r,b}, a leading rotation that builds
+// the layer on the bottom), so these pin the NEW full lines — each is
+// physically re-proved (mv.ok) and independently reassembled (displayedSolves).
+const USER = [
+  { label: 'Pi Triple Sledge 135',
+    scr: E.inverseState(E.applyParsed(E.parseAlg(E.preprocessAlg("B' l r l' b r l y x r' R r R'"), 'ns'), E.solved(), syms, rotBy)),
+    pmoves: '1,2,4,3,6,2,0', alg: "r' R r R'", text: "z' b' B r R' B r b x r' R r R'" },
+  { label: 'BST- BL S1',
+    scr: E.keyToState('015432|30212220|0022'),
+    pmoves: '2,4', alg: "R' B' r' R r R B R'", text: "x r R x R' B' r' R r R B R'" },
+  { label: 'Pi Triple Sledge 136',
+    scr: (() => { const s = E.copy(E.keyToState('415302|01230210|0201')); E.applyMoveIdx(s, 3); E.applyMoveIdx(s, 1); return s; })(),
+    pmoves: '0,2', alg: "R r' R' r", text: "z R r y x R r' R' r" },
+];
+// These pins are state-built (no scramble text), so the assumed hold is the
+// raw pinned facelets — methodView's default (G = identity).
+for (const u of USER) t(`USER solve: ${u.label} — full RubiksSkewb line + physical proof`, () => {
+  const res = C.search(u.scr, { methods: { fl: true, tcll: true, eg2: true }, caps: {} });
   for (const items of Object.values(res.byLength)) for (const it of items) {
-    if (!it.row) continue;
-    const mv = C.methodView(scr, it);
-    if (E.wcaToNS(mv.vmoves) === "B' l r l' b r l" && mv.alg === "r' R r R'") {
-      if (mv.rot !== "y' z") throw new Error('rot "' + mv.rot + '" (want "y\' z")');
-      if (!mv.ok) throw new Error('does not verify');
-      return;
+    if (!it.row || it.pmoves.join(',') !== u.pmoves || it.row.ns !== u.alg) continue;
+    const mv = C.methodView(u.scr, it);
+    if (!mv.ok || !displayedSolves(E.toFacelets(u.scr), mv)) throw new Error('does not physically verify');
+    if (mv.text !== u.text) throw new Error(`text "${mv.text}" (want "${u.text}")`);
+    if (mv.face !== 'D') throw new Error('layer not on the bottom');
+    return;
+  }
+  throw new Error('solution not found');
+});
+
+/* ---------- the USER's 2026-07-10 lead-rotation bug report, pinned ---------- */
+// Scramble B' R L U' L' B' R' U' (two written B's -> the real cube in hand is
+// rotated relative to the pinned state's raw facelets). The solver printed
+// "y' R' r b' r B y z R r R' r'", which the USER physically executed and
+// FALSIFIED; executing lead x instead of y' worked. The fix derives the line
+// from the held facelets (physPerm of the scramble text). All three claims
+// are pinned: the corrected line proves from the real hold, the USER's
+// hand-verified variant proves from the real hold, and the old buggy line
+// does NOT.
+t("USER bug 2026-07-10: lead rotation derives from the held facelets, not the pinned state", () => {
+  const { state, heldFl, res } = runFixture("B' R L U' L' B' R' U'");
+  let mv = null;
+  for (const items of Object.values(res.byLength)) for (const it of items) {
+    if (it.row && it.pmoves.join(',') === '7,0,7,0,6' && it.row.ns === "R r R' r'") { mv = C.methodView(state, it, heldFl); break; }
+  }
+  if (!mv) throw new Error('solution not found');
+  if (!mv.ok || !displayedSolves(heldFl, mv)) throw new Error('corrected line does not physically verify');
+  if (mv.face !== 'D') throw new Error('layer not on the bottom');
+  if (mv.text !== "y r' R r' B b y' z R r R' r'") throw new Error(`text "${mv.text}"`);
+  // the USER's physically-executed variant (ground truth) from the same hold
+  const userLine = { lead: 'x', first: "R' r b' r B", rot: 'y z', alg: "R r R' r'" };
+  if (!displayedSolves(heldFl, userLine)) throw new Error("USER's hand-verified line does not prove");
+  // the pre-fix output must NOT prove from the real hold (regression tripwire)
+  const buggy = { lead: "y'", first: "R' r b' r B", rot: 'y z', alg: "R r R' r'" };
+  if (displayedSolves(heldFl, buggy)) throw new Error('the old buggy line suddenly proves');
+});
+
+/* ---------- the Algorithms-page display (layer-down pictures + verbatim-or-rederived texts) ---------- */
+// USER requirement 2026-07-10: every case image shows the built layer on the
+// BOTTOM, and each alg text's starting rotation is exactly what a human turns
+// from the pictured hold. layerDownFacelets picks the picture; sheetLineFor
+// keeps the authored text verbatim whenever it already proves from the
+// picture (all standard groups — the picture is the raw pinned frame) and
+// re-derives the lead only for the odd-orientation groups. Every ok line is
+// itself a valid sheet text, so each is independently re-proved here by one
+// fresh parse + physPermNS from the pictured facelets.
+t('algs display: 1420 groups, 9 pictured rotated; 3073 verbatim / 9 rederived / 34 unparseable; every line re-proves', () => {
+  const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
+  const strip = alg => {
+    const tk = String(alg).trim().split(/\s+/).filter(Boolean);
+    while (tk.length && /^[xyz](2'|2|')?$/.test(tk[tk.length - 1])) tk.pop();
+    return tk.join(' ');
+  };
+  let groups = 0, rotated = 0, verbatim = 0, rederived = 0, warn = 0;
+  for (const key of Object.keys(subs)) for (const c of subs[key].cases || []) {
+    const byState = new Map();
+    for (const a of c.algs || []) {
+      const st = E.caseStateOf(strip(E.normAlg(a.alg)));
+      if (!st) continue;
+      const k = E.stateKey(st);
+      if (!byState.has(k)) byState.set(k, { st, rows: [] });
+      byState.get(k).rows.push(a);
+    }
+    for (const { st, rows } of byState.values()) {
+      groups++;
+      const pic = C.layerDownFacelets(st);
+      if (pic.rotated) rotated++;
+      for (const a of rows) {
+        const line = C.sheetLineFor(pic.fl, a.ns || a.alg, a.ns ? 'ns' : 'wca');
+        if (!line.ok) { warn++; continue; }
+        if (line.rederived) rederived++; else verbatim++;
+        // independent physical re-proof of the DISPLAYED text from the picture
+        // (authored sheet texts only — admin-style WCA rows have no ns field)
+        if (a.ns) {
+          const toks = E.parseAlg(E.preprocessAlg(line.text), 'ns');
+          if (!toks || !C.SOLVED24_KEYS.has(C.flKey(C.pApply(pic.fl, C.physPermNS(toks)))))
+            throw new Error('displayed line does not re-prove: ' + line.text);
+        }
+      }
     }
   }
-  throw new Error('solution not found');
-});
-t('USER fixture 2: "l r" + TCLL BST- BL S1 prints rotation "y x\'"', () => {
-  const scr = E.keyToState('015432|30212220|0022');  // machine-derived from the user's junction
-  const res = C.search(scr, { methods: { fl: true, tcll: true, eg2: true }, caps: {} });
-  for (const items of Object.values(res.byLength)) for (const it of items) {
-    if (!it.row || it.pmoves.join(',') !== '2,4' || it.row.ns !== "R' B' r' R r R B R'") continue;
-    const mv = C.methodView(scr, it);
-    if (mv.rot !== "y x'") throw new Error('rot "' + mv.rot + '" (want "y x\'")');
-    if (!mv.ok) throw new Error('does not verify');
-    return;
-  }
-  throw new Error('solution not found');
-});
-t('USER fixture 3: Pi Triple Sledge 136 junction prints rotation "y2 z"', () => {
-  const J3 = E.keyToState('415302|01230210|0201');   // machine-derived fl junction
-  const scr = E.copy(J3);
-  E.applyMoveIdx(scr, 3); E.applyMoveIdx(scr, 1);    // scr = J3 minus the path [0, 2]
-  const res = C.search(scr, { methods: { fl: true, tcll: true, eg2: true }, caps: {} });
-  for (const items of Object.values(res.byLength)) for (const it of items) {
-    if (!it.row || it.pmoves.join(',') !== '0,2' || it.row.ns !== "R r' R' r") continue;
-    const mv = C.methodView(scr, it);
-    if (mv.rot !== 'y2 z') throw new Error('rot "' + mv.rot + '" (want "y2 z")');
-    if (!mv.ok) throw new Error('does not verify');
-    return;
-  }
-  throw new Error('solution not found');
+  const got = [groups, rotated, verbatim, rederived, warn].join('/');
+  if (got !== '1420/9/3073/9/34') throw new Error(got + ' (want 1420/9/3073/9/34)');
 });
 
 /* ---------- search: completeness (constructed decompositions are found) ---------- */

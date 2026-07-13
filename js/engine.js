@@ -415,13 +415,113 @@ function makeMirrorCanon(syms) {
     return best;
   };
 }
-// full 24-element fold (12 rotations + 12 mirror images): 3,149,280 states
-// come down to 131,391 classes (oracle in tools/verify-space.mjs). This is the
-// census's class key — a position and its mirror share one class.
+// 24-element fold of the STATE symmetries (12 rotations + 12 mirror images):
+// 3,149,280 states come down to 131,391 classes (oracle in
+// tools/verify-space.mjs). Kept as an oracle/intermediate — the census's page
+// key is makeFull48Canon below (which additionally folds the re-holds).
 function makeFullCanon(syms) {
   return function fcanon(s) {
     let best = Infinity;
     for (const sym of syms.all) { const v = idx(sym.apply(s)); if (v < best) best = v; }
+    return best;
+  };
+}
+
+// ---------------- hold ("re-hold") symmetry: the 12 tetrad-swapping rotations ----------------
+// The other 12 PROPER rotations of the cube (90°-type re-holds) swap the corner
+// tetrads, so they are NOT state symmetries — conjugating a state by one leaves
+// the axis tetrad displaced and the result must be RE-ANCHORED before it can be
+// read as a state:   ι(s) = reanchor( ρ0 · Φ(s) · ρ0⁻¹ )   for one fixed
+// tetrad-swapping ρ0 (Φ(s) = the physical permutation of any word reaching s;
+// ι is word-independent because the state determines Φ). Physically: the same
+// scramble performed, gesture for gesture, on a solved cube held 90°
+// differently — every turn keeps its handedness, so a right-handed solution
+// transfers move for move and the census must count the two as ONE entry
+// (mirrors, which flip handedness, must NOT fold — USER requirement).
+//
+// Computed via the FREE-TURN route: conjugating a native move about axis corner
+// A by ρ0 is the physical turn of the free-corner hemisphere at ρ0(A), same
+// handedness — exactly the turn the parser already executes from any state (the
+// deep-cut identity + frame walk, TNoodle-pinned). So ι(s) = ONE applyParsed
+// run over the whole conjugated token stream of a word reaching s, from the
+// identity start. It must be one stream: every free-corner turn leaves a 240°
+// whole-cube rotation in the frame that re-aims all LATER letters — applying
+// the turns one at a time with fresh frames is physically wrong
+// (machine-falsified 2026-07-10, tools/verify-space.mjs re-proves both routes).
+// ι is a state-level involution (HOLD_FP has order 2), depth- and
+// chirality-preserving. Fold ladder (all machine-verified 2026-07-10):
+// 3,149,280 → 262,674 (12 rots) → 132,315 (24 rots — THE CENSUS entry fold)
+// vs 131,391 (12 rots + mirrors, the pre-2026-07-10 census) → 66,321 (all 48 —
+// the census page pairing). See docs/skewb-ground-truth.md §Symmetry.
+const HOLD_FP = { U:'B', B:'U', F:'D', D:'F', R:'L', L:'R' }; // ρ0: 180° about the UB↔DF edge axis
+let _holdTok = null;
+function _holdEnsure() {
+  if (_holdTok) return;
+  // machine-pin ρ0 before deriving anything from it: it must be PROPER (det +1
+  // — a mirror here would silently flip chirality and build the wrong fold),
+  // an involution (that is what makes ι(ι(s)) = s hold at the STATE level),
+  // and tetrad-swapping (else ι would be a plain rotation symmetry).
+  const img = f => FNORM[HOLD_FP[f]];
+  if (Math.round(dot(img('R'), cross(img('U'), img('F')))) !== 1) throw new Error('HOLD_FP is not a proper rotation');
+  for (const f of FACES) if (HOLD_FP[HOLD_FP[f]] !== f) throw new Error('HOLD_FP is not an involution');
+  const cmap = cornerMapOfFp(HOLD_FP); // machine-derived corner action of ρ0
+  for (const A of AXIS) if (FREE_IDX[cmap[A]] === undefined) throw new Error('HOLD_FP does not swap the tetrads');
+  // one parsed token per native move index: the free-corner turn at ρ0(axis),
+  // SAME amount (rotations preserve handedness; a plain stays a plain).
+  _holdTok = MOVE_AXIS.map((A, m) => ({ kind: 'move', c: cmap[A], amt: (m & 1) ? 2 : 1 }));
+}
+// makeHoldSym(syms) -> { fp, tokens, scrambleMovesTo, iotaOfWord, iota }.
+//   iotaOfWord(moves): ι of the state reached by `moves` (native move indexes
+//     from solved) — needs no dist; any word reaching the state gives the same ι.
+//   iota(state, dist): derives a solving word from the distance table first.
+function makeHoldSym(syms) {
+  _holdEnsure();
+  const rotBy = makeFrames(syms);
+  // native move indexes (into MOVES) that scramble solved -> state
+  function scrambleMovesTo(state, dist) {
+    const s = copy(state); const sol = [];
+    let d = dist[idx(s)];
+    if (d < 0) return null;
+    while (d > 0) {
+      for (let m = 0; m < MOVES.length; m++) {
+        const t = copy(s); applyMoveIdx(t, m);
+        if (dist[idx(t)] === d - 1) { applyMoveIdx(s, m); sol.push(m); d--; break; }
+      }
+    }
+    return sol.reverse().map(m => m ^ 1); // invert the solution, read backwards
+  }
+  const iotaOfWord = moves => applyParsed(moves.map(m => _holdTok[m]), solved(), syms, rotBy);
+  const iota = (state, dist) => { const w = scrambleMovesTo(state, dist); return w && iotaOfWord(w); };
+  return { fp: HOLD_FP, tokens: _holdTok, scrambleMovesTo, iotaOfWord, iota };
+}
+// hold-24 canon: min state index over the 12 rotation images of s AND of ι(s)
+// — the CENSUS entry key (132,315 reps; chirality preserved, so a position and
+// its LR mirror stay separate). Needs dist for ι's solving word, so the factory
+// takes it (built after loadOrBuildDist; unreachable states fold rotations only).
+function makeHold24Canon(syms, dist) {
+  const hold = makeHoldSym(syms);
+  return function h24(s) {
+    const t = hold.iota(s, dist);
+    let best = Infinity;
+    for (const sym of syms.rots) {
+      let v = idx(sym.apply(s)); if (v < best) best = v;
+      if (t) { v = idx(sym.apply(t)); if (v < best) best = v; }
+    }
+    return best;
+  };
+}
+// full 48-group canon (24 proper rotations + their 24 mirror images): min over
+// the rotation AND mirror images of both s and ι(s) — the census PAGE-pairing
+// key (66,321 pages; a position and its LR mirror share one, 327 self-mirror).
+function makeFull48Canon(syms, dist) {
+  const hold = makeHoldSym(syms);
+  return function f48(s) {
+    const t = hold.iota(s, dist);
+    let best = Infinity;
+    for (const sym of syms.all) {
+      let v = idx(sym.apply(s)); if (v < best) best = v;
+      if (t) { v = idx(sym.apply(t)); if (v < best) best = v; }
+    }
     return best;
   };
 }
@@ -707,6 +807,7 @@ module.exports = {
   FACES, S4, G4, OPP, MOVES, NSLOTS,
   solved, copy, eq, move, applyMoveIdx, idx, unidx,
   buildSyms, symFromFacePerm, applySym, makeCanon, makeMirrorCanon, makeFullCanon,
+  makeHoldSym, makeHold24Canon, makeFull48Canon,
   parseAlg, countMoves, applyParsed, makeFrames, mirrorAlg,
   optimalSolution, optimalScramble, invertAlg, faceCompose, FACE_ID,
   // notation systems: WCA (default) and NS ("Rubik'skewb", the Sarah/NS sheets)

@@ -94,26 +94,78 @@ positions: 1  8  48  288  1728  10248  59304  315198  1225483  1455856  81028  9
 
 ## Symmetry (test oracles)
 
-The relevant group is the **tetrad-preserving** subgroup T_d, order 24 = 12 proper rotations
-(≅ A4: identity, eight 120°/240° corner-diagonal rotations, three 180° face rotations) + 12
-improper (mirror ∘ rotation) — structurally identical to the Pyraminx engine's
-{rots:12, mirrors:12}. 90° cube rotations (single `y` etc.) swap the tetrads and are NOT
-state symmetries; they appear only in the notation frame. Case keying (`realCanonKey`)
-therefore folds only the **y² view** (180° about U, tetrad-preserving); the four viewing
-presentations of a case are paired at the DATA level via the alg sheet's `direction` field,
-like the Pyraminx sheet's bar directions.
+The **state-symmetry** group (acting on states without re-anchoring) is the
+**tetrad-preserving** subgroup, order 24 = 12 proper rotations (≅ A4: identity, eight
+120°/240° corner-diagonal rotations, three 180° face rotations) + 12 improper
+(mirror ∘ rotation) — structurally identical to the Pyraminx engine's {rots:12, mirrors:12}.
+Case keying (`realCanonKey`) folds only the **y² view** (180° about U, tetrad-preserving);
+the four viewing presentations of a case are paired at the DATA level via the alg sheet's
+`direction` field, like the Pyraminx sheet's bar directions.
+
+**The hold symmetry (machine-verified 2026-07-10).** The other 12 PROPER rotations of the
+cube — the 90°-type "re-holds" (six 90° face rotations + six 180° edge rotations) — swap
+the corner tetrads, so they are NOT raw state symmetries: conjugating a state by one
+displaces the axis tetrad. But they DO act on states via **re-anchoring**:
+
+```
+ι(s) = reanchor( ρ0 · Φ(s) · ρ0⁻¹ )        ρ0 = one fixed tetrad-swapping rotation
+```
+
+(Φ(s) = the physical sticker permutation of any word reaching s — ι is word-independent
+because the state determines Φ; reanchor = the unique tetrad-preserving rotation putting
+every axis piece back on its own slot.) Physically: the same scramble performed, gesture
+for gesture, on a solved cube held 90° differently. Every turn keeps its handedness, so a
+right-handed solution transfers move for move — which is why the census MUST fold these 12
+along with the engine's 12 (a "24 proper rotations" fold), while mirrors must NOT fold.
+**Chirality (CW vs CCW) is invariant under all 24 rotations and only mirrors flip it**:
+the two depth-1 one-move classes ({U L R F} plain = CW, primes = CCW) stay distinct under
+every rotation and are each ι-fixed; written WCA `B` from solved is rotation-class-equal to
+a plain (CW) native move, `B'` to a prime (CCW) one — pinned in tools/verify-space.mjs.
+
+Engine implementation (`makeHoldSym` / `makeHold24Canon` / `makeFull48Canon`, engine.js):
+ι is computed by the **free-turn route** — conjugating a native move about axis corner A by
+ρ0 gives the physical free-corner hemisphere turn at ρ0(A), same handedness, so ι(s) is ONE
+`applyParsed` pass over the ρ0-conjugated free-corner token stream of any word reaching s,
+from the identity start. It must be one stream: every free-corner turn parks a 240°
+whole-cube rotation in the parse frame that re-aims all LATER letters (applying the turns
+one at a time with fresh frames is physically wrong — machine-falsified 2026-07-10). ρ0 is
+pinned at init (proper: det +1; involution — that makes ι(ι(s)) = s at the STATE level;
+tetrad-swapping); tools/verify-space.mjs re-proves ι against an independent facelet-level
+conj+reanchor construction on samples, plus involution/depth/chirality preservation.
 
 Mirror for `mirrorAlg`: reflection across the plane x+z=0 (contains UFL, UBR, U, D). Face map
 {U:U, D:D, R:B, B:R, F:L, L:F}; corner action: fixes UFL, UBR, DFL, DBR; swaps DFR↔DBL and
 UFR↔UBL; twists negate. Written-letter map: **{R↔L, U→U′, B→B′}** with prime flips — same map
 as the Pyraminx engine.
 
-Computed class counts (from the verification BFS; use as oracles): canon over 12 proper
-rotations → **262,674** classes; over all 24 → **131,391**; the 90 depth-11 antipodes form 12
-classes under the 24-group. **The OO census canonicalizes over the full 24-element group**
-(`makeFullCanon`, IndexedDB key `oo-classes-v2`) — a position and its mirror are one census
-class, so the site counts 131,391 positions; 2·131,391 − 262,674 = **108** classes are
-self-mirror. The sheet/trainer case keying (`realCanonKey`, y²-fold) is unaffected.
+**Fold ladder** (from the verification BFS; all machine-verified 2026-07-10; use as oracles):
+
+```
+3,149,280 raw reachable states
+   → 262,674   12 tetrad-preserving rotations              (intermediate oracle)
+   → 132,315   24 proper rotations (12 + ι)                ← THE CENSUS entry fold
+   vs 131,391  12 rotations + 12 mirrors                   (the pre-2026-07-10 census)
+   → 66,321    all 48 (24 rotations + 24 mirror images)    ← the census PAGE pairing
+```
+
+Fixed-point counts over the 262,674 rotation classes: the ι involution fixes **1,956**
+(⇒ (262,674+1,956)/2 = 132,315), the mirror involution fixes **108**. Of the 132,315
+hold-24 entries, **327** are self-mirror (2·66,321 − 132,315 = 327 single-side pages).
+The 90 depth-11 antipodes form 12 classes under the 12rot+mirror group. Per-depth hold-24
+entry counts (depth 0..11) — note depth 1 = 2, the CW and CCW classes:
+
+```
+depth:    0  1  2   3   4    5     6      7      8      9     10  11
+entries:  1  2  4  16  80  444  2514  13254  51374  61115  3500  11
+```
+
+**The OO census counts hold-24 entries** (`makeHold24Canon`, IndexedDB key `oo-classes-v4`,
+132,315 entries; community solutions are righty-tuned, so a position and its LR mirror are
+separate entries, each with its own ordinal, done-bit, solutions and cap). The census page
+key / Firestore `pairSolutions` query key is `makeFull48Canon` (66,321 pages) — the two
+mirror sides share one page, shown side by side. `makeCanon`/`makeMirrorCanon`/
+`makeFullCanon` survive as oracles/intermediates. The sheet/trainer case keying
+(`realCanonKey`, y²-fold) is unaffected.
 
 ## Test vectors
 
@@ -199,16 +251,46 @@ human holds is W(J), and the printed rotation must be derived from W(J), not J (
 junction 1: `y′ z` from W(J) vs the spurious `x2` from J). The solver (js/solver-core.js)
 therefore runs all hold/rotation logic in a PHYSICAL facelet model anchored to the
 TNoodle-validated perms: per text it indexes Φ⁻¹ of the 24 solved orientations, matches
-junctions under 24 rotations of W(J), prints the nicest matching R spelled in SHEET
+junctions under 24 rotations, and derives every display rotation there — spelled in SHEET
 letters (sheet x/y/z = physical z/y/x′ — the letters this community reads; engine letters
-are INTERNAL and never displayed), and re-proves every displayed line by a facelet check.
-Coverage under the physical model is count-identical to the old engine-frame index
-(2,733 / 10,392 / 3,180) — the match relation agreed, the printed rotations did not.
-Flip note: the community sheets are NOT WCA (x/z differ), and the USER demonstrably thinks
-in SHEET letters — flipping the engine to plain WCA would still leave x/z sight-read wrong;
-pick the flip target deliberately. Mid-alg rotation letters in displayed alg bodies
-(Algorithms page, trainer, solver bodies) and the trainer's y-chips retain the sight-read
-hazard until that decision.
+are INTERNAL and never displayed) — re-proving every displayed line by a facelet check.
+Coverage under the physical model measured count-identical to the old engine-frame index
+at the time (2,733 / 10,392 / 3,180 on 2026-07-07 — the match relation agreed, the printed
+rotations did not); BOTH of those measurements were under the engine-letter misread of
+mid-alg rotation tokens and are superseded — the true coverage under the sheet-letter
+reading is 3,109 / 11,964 / 3,204 (see the Flip note below, 2026-07-10).
+As of 2026-07-10 the WHOLE reconstruction is displayed physically: `[lead rotation]
+[first layer in the sheet vocabulary {R,B,r,b}] [setup rotation] [finish alg]`. The layer
+uses only the four right-side corner names (one per space diagonal — L/l/F/f never appear,
+matching the sheets' own alg vocabulary), and the lead rotation is picked so the built
+layer lands on the bottom (a leading rotation genuinely reorients the build — it is NOT
+compensated by the renamed moves, machine-checked — so methodView derives lead + setup
+together and physically re-proves the line). A third subtlety, USER-falsified the same day
+(scramble `B' R L U' L' B' R' U'`: the printed lead `y′` failed at the table, `x` worked):
+the reconstruction must start from the facelets the human ACTUALLY HOLDS after executing
+the scramble TEXT — physPerm of the parsed scramble (`heldFacelets`) — not from the pinned
+state's raw facelets. Every written free-corner letter (WCA `B`, NS `R L f b`) leaves a
+240° whole-cube rotation that the engine absorbs into its parsing frame (`ROT240_UFL`;
+same mechanism `toFixedFacelets` corrects for rendering), so the real cube in hand is
+G-rotated relative to `toFacelets(state)` — G a property of the TEXT, not the state, and
+unrecoverable from the state alone for NS texts. methodView takes the held facelets,
+emits the layer from the orientation G∘lead while printing just the lead, and re-proves
+the whole line from the held facelets; the counterexample (corrected line, the USER's
+hand-verified variant, and the refuted pre-fix line) is pinned in test:solver. Flip note: the community sheets are NOT WCA
+(x/z differ), and the USER demonstrably thinks in SHEET letters — flipping the engine to
+plain WCA would still leave x/z sight-read wrong; pick the flip target deliberately.
+Mid-alg rotation letters in displayed alg bodies were NOT actually a sight-read hazard:
+machine-established 2026-07-10, the stored `ns` fields are VERBATIM sheet strings (916 of
+the 928 mid-rotation texts solve their WCA-field case state only under the sheet-letter
+reading; zero under the engine reading; the other 12 are the unparseable slash texts) —
+so what humans read on screen was always right, and the hazard was in the MACHINE: the
+solver's finish index was reading those tokens as engine letters (`physPerm`), silently
+mis-indexing every mid-rotation body and printing physically wrong setup rotations for
+them. Fixed 2026-07-10 with `physPermNS` (sheet-letter physical reading); with it the
+finish coverage is essentially complete — 3,109/3,110 fl, 11,964/11,964 tcll,
+3,204/3,204 eg2 — falsifying the earlier "≈12 % gap is a property of the sheets"
+conclusion below. The trainer's y-chips still assume the engine spelling of `y`; that
+and any machine parse of authored texts must route rotations through the sheet map.
 
 Related (found by the M7 solver, 2026-07-07): **the frame machinery is not
 conjugation-equivariant** — evaluating the same token text behind different rotation
@@ -219,10 +301,13 @@ the RIGHT (locally). Under the engine's reading the set of states a text solves 
 hold" is a property of that text (≤ 24 states, not a view-orbit). **Resolved same day
 (see the physical-execution block above): physical execution does NOT agree with the
 engine behind rotation prefixes** — physically the solvable set IS rotation-closed, and
-the solver no longer uses the engine's hold reading at all (physical facelet model; the
-~12 % of fl/tcll junction states without a sheet finish are a genuine property of the
-sheets, not an artifact). The engine's frame machinery remains corpus-faithful for
-identity-start evaluation, which is all the rest of the site uses it for.
+the solver no longer uses the engine's hold reading at all (physical facelet model).
+CORRECTION 2026-07-10: the "~12 % of fl/tcll junction states without a sheet finish"
+measured here WAS an artifact after all — of reading the ns texts' mid-alg rotation
+tokens as engine letters (see the Flip note above); under the correct sheet-letter
+reading the coverage is essentially complete. The engine's frame machinery remains
+corpus-faithful for identity-start evaluation, which is all the rest of the site uses
+it for.
 
 ### NS ("Rubik'skewb") notation
 
@@ -260,22 +345,31 @@ requires an explicit migration; nothing may change silently.
 `uid`, `status` (`pending|approved|rejected`), `createdAt` (server timestamp),
 `pairId`/`classId`/`partnerId` (ints in `[0, 9447840)` = engine state indexes,
 `E.idx` over NSLOTS 360×12×2187 — enumeration-independent, NOT class ordinals;
-`pairId` = full-24-sym canonical id = `classId` of the rep side), `scramble`
+`pairId` = the page-grouping canonical id = `classId` of the rep side — full
+48-group canon since 2026-07-10, previously the 24-sym canon; consumers never
+trust a stored `pairId` beyond querying, everything is re-derived from
+`classId`), `scramble`
 (engine WCA string), `solution` (text as typed), `notation` (`'wca'|'ns'` — the
 system `solution` is written in; `scramble` is always WCA), `moves` (int 1–15),
 `name`, `showName`, and after review `reviewedBy` (email). Field set enforced by
 `firestore.rules` `hasOnly`.
 
-**`meta/doneMap`** — `{ b64 }`: base64 of a `Uint8Array(⌈131391/8⌉)`; bit `o`
+**`meta/doneMap`** — `{ b64 }`: base64 of a `Uint8Array(⌈132315/8⌉)`; bit `o`
 (byte `o>>3`, mask `1<<(o&7)`) = "class ordinal `o` has an approved solution".
-**Ordinals index the sorted `oo-classes-v2` reps array** (ascending state-index
-order, 131,391 entries — js/tables.js `KEY_CLASSES`). The bitmap is therefore
-coupled to the class enumeration: if the class key/enumeration ever changes,
-bump `KEY_CLASSES` AND rebuild the bitmap in the same release — the Moderation
-tab's admin "Recompute solved bitmap" rebuilds it from the solution docs'
-`classId` (state indexes survive any re-enumeration).
+**Ordinals index the sorted `oo-classes-v4` reps array** (ascending state-index
+order, 132,315 hold-24 entries — js/tables.js `KEY_CLASSES`; one entry per
+mirror SIDE, and a bit is derived from a doc's `classId` via the HOLD-24 entry
+canon (`makeHold24Canon`) — an approved solution marks only the side it
+solves). The bitmap is therefore coupled to the class enumeration: if the class
+key/enumeration ever changes, bump `KEY_CLASSES` AND rebuild the bitmap in the
+same release — the Moderation tab's admin "Recompute solved bitmap" rebuilds it
+from the solution docs' `classId` (state indexes survive any re-enumeration).
+That recompute is the required migration step after the v3→v4 re-key (as it was
+for v2→v3): an older bitmap indexes a different enumeration and is discarded by
+a size guard rather than misread.
 
 **`meta/stats`** — `{ done, total }`: `done` = popcount of doneMap (distinct
-solved classes; depth-0 is *not* in the bitmap — the UI counts it as solved by
-definition), `total` = 131,391. Both meta docs are derived caches; the admin
-recompute action regenerates them from the approved solutions at any time.
+solved SIDES; depth-0 is *not* in the bitmap — the UI counts it as solved by
+definition), `total` = 132,315. Both meta docs are derived caches; the admin
+recompute action regenerates them from the approved solutions at any time (and
+they self-heal at the next approve — page code never writes them).

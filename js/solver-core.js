@@ -39,7 +39,26 @@
    sheets' letters (sheet x/y/z = physical z/y/x′ — the letters this
    community actually reads; engine x/y/z are physically inverted and are
    never shown). USER-validated on three junctions: y′ z, y x′, y2 z.
-   Every displayed line is re-proved by the facelet check in methodView. */
+
+   DISPLAY (methodView): the whole line reads in RubiksSkewb notation —
+   [lead rotation] [first layer in the sheet vocabulary {R,B,r,b}]
+   [setup rotation] [finish alg]. The first layer never uses L/l/F/f (each
+   space diagonal has a right-side name), the lead rotation puts the built
+   layer on the bottom (like the sheets/trainer), and the whole line is
+   re-proved by the facelet check in methodView (USER requirement 2026-07-10).
+
+   THE HOLD (USER bug report 2026-07-10, scramble B' R L U' L' B' R' U'): the
+   line must be derived from the facelets the human ACTUALLY HOLDS after
+   executing the scramble TEXT — physPerm of the parsed scramble — not from
+   the pinned state's raw facelets. Every written free-corner letter (WCA B,
+   NS R/L/f/b) leaves a 240° whole-cube rotation that the engine absorbs into
+   its parsing frame (see engine.js ROT240_UFL), so the real cube in hand is
+   G-rotated relative to toFacelets(state), G = the text's accumulated
+   leftover rotation. methodView therefore takes the held facelets and emits
+   the layer from the orientation G∘lead while printing just the lead — the
+   USER's physically-executed counterexample (printed y′ failed, x worked) is
+   pinned in test:solver. State-only callers default to the raw facelets
+   (G = identity), which reproduces the pre-fix behaviour exactly. */
 /* ---------- method registry (module-level: no E/dist dependency) ---------- */
 // Names are the display labels used by the solver page and the tuning lab;
 // METHOD_PRIORITY is the display tie-break order. Caps default to the
@@ -74,26 +93,6 @@ function makeSolverCore(E, dist, algData) {
   const BYC_FP = {}; for (const A of Object.keys(rotBy.byCorner)) BYC_FP[A] = rotBy.byCorner[A].fp;
   // native move index -> the axis corner it twists (mirrors engine MOVE_AXIS)
   const NATIVE_AXIS = ['UBR', 'UBR', 'DBL', 'DBL', 'DFR', 'DFR', 'UFL', 'UFL'];
-  const WLETTERS = ['R', 'U', 'L', 'B'];
-
-  // Emit written WCA tokens for a native move list, starting from `frame`
-  // (mirrors applyParsed's resolution exactly, including the free-corner
-  // frame walk — unlike engine nativeToWCA this also handles the odd
-  // tetrad-swapping frames a rotated hold creates).
-  function emitWCA(mis, frame) {
-    frame = frame || ID_FRAME;
-    const out = [];
-    for (const mi of mis) {
-      const axis = NATIVE_AXIS[mi], amt = (mi & 1) ? 2 : 1;
-      let w = WLETTERS.find(l => frame.corner[E.WCA_CORNER[l]] === axis);
-      if (w) { out.push(w + (amt === 2 ? "'" : '')); continue; }   // direct axis letter
-      w = WLETTERS.find(l => E.OPP[frame.corner[E.WCA_CORNER[l]]] === axis);
-      if (!w) throw new Error('frame resolution failed');
-      out.push(w + (amt === 2 ? "'" : ''));                        // free-corner letter + walk
-      for (let k = 0; k < amt % 3; k++) frame = frameOf(E.faceCompose(BYC_FP[axis], frame.fp));
-    }
-    return { tokens: out, frame };
-  }
 
   /* ---------- the physical model (facelet space; TNoodle-anchored) ---------- */
   // Letters twist the corner at a FIXED hand position; rotation tokens turn
@@ -163,6 +162,22 @@ function makeSolverCore(E, dist, algData) {
   // (identity, y-family singles, then pairs — the letters the sheets and
   // their solvers actually read: sheet x/y/z = physical z/y/x').
   const SHEET_PHYS = { x: PHYS_XYZ.z, y: PHYS_XYZ.y, z: pInv(PHYS_XYZ.x) };
+  // physical execution perm of a parsed SHEET text (the authored `ns` fields
+  // are VERBATIM sheet strings — import-method-sheets keeps the source
+  // untouched): move letters twist fixed hand positions exactly like
+  // physPerm, but rotation tokens are the sheets' letters, not the engine's.
+  // Machine-established 2026-07-10: of the imported texts with MID-alg
+  // rotation tokens, 916 solve their WCA-field case state ONLY under this
+  // reading and ZERO under the engine reading (the remaining 12 are the
+  // unparseable slash-alternative texts) — so every machine consumer of an
+  // ns text must use THIS perm; physPerm is for engine-letter strings the
+  // core writes itself (LEAD engStr).
+  function physPermNS(toks) {
+    let C = ID30;
+    for (const t of toks)
+      C = pThen(C, t.kind === 'rot' ? pPow(SHEET_PHYS[t.f], t.amt) : pPow(TWIST[t.c], t.amt));
+    return C;
+  }
   const sheetStrPerm = str => String(str).split(/\s+/).filter(Boolean).reduce((C, tok) => {
     const m = tok.match(/^([xyz])(2'|2|')?$/);
     if (!m) throw new Error('not a rotation token: ' + tok);
@@ -182,36 +197,64 @@ function makeSolverCore(E, dist, algData) {
   const SOLVED_FL = E.solvedFacelets();
   const SOLVED24 = ROT24.map(r => pApply(SOLVED_FL, r.perm));
   const SOLVED24_KEYS = new Set(SOLVED24.map(flKey));
-  const GROUP_IDX = new Map(ROT24.map((r, i) => [permKey(r.perm), i]));
-  const MUL24 = ROT24.map(w => ROT24.map(r => GROUP_IDX.get(permKey(pThen(w.perm, r.perm)))));
-
-  // The displayed first step is NOT always the native move sequence: emitWCA
-  // substitutes a free-corner letter (WCA B / NS b) for native UFL-axis
-  // moves, and executing the substituted letter leaves the cube ROTATED
-  // relative to the native bookkeeping — the junction the HUMAN holds is
-  // W(junction), where W is that accumulated rotation. These return the
-  // physical perm of the displayed step and its W (a ROT24 group index).
-  function emitPhysPerm(mis) {
-    let frame = ID_FRAME, C = ID30;
+  /* ---------- the first-step (layer) emitter, RubiksSkewb notation ---------- */
+  // The layer is written the way the sheets write algorithms: NS notation, and
+  // ONLY the four right-side corner letters {R, B, r, b} — one name per space
+  // diagonal, so every skewb move is expressible without ever needing L/l/F/f
+  // (USER requirement 2026-07-10). For each native move: the direct axis
+  // letter if an allowed corner sits on it, else the opposite corner + a
+  // frame walk (the same resolution applyParsed uses). `frame` is the hold the
+  // writing is relative to, so a non-identity start frame is spelled as a
+  // leading rotation.
+  const NS_RIGHT = { R: 'UFR', B: 'UBR', r: 'DFR', b: 'DBR' };   // NS letter -> corner
+  const NS_RIGHT_L = Object.keys(NS_RIGHT);
+  function emitNS(mis, frame) {
+    frame = frame || ID_FRAME;
+    const out = [];
     for (const mi of mis) {
       const axis = NATIVE_AXIS[mi], amt = (mi & 1) ? 2 : 1;
-      let w = WLETTERS.find(l => frame.corner[E.WCA_CORNER[l]] === axis);
-      if (!w) {
-        w = WLETTERS.find(l => E.OPP[frame.corner[E.WCA_CORNER[l]]] === axis);
-        if (!w) throw new Error('frame resolution failed');
-        for (let k = 0; k < amt % 3; k++) frame = frameOf(E.faceCompose(BYC_FP[axis], frame.fp));
-      }
-      C = pThen(C, pPow(TWIST[E.WCA_CORNER[w]], amt));   // the human twists the WRITTEN position
+      let w = NS_RIGHT_L.find(l => frame.corner[NS_RIGHT[l]] === axis);        // direct axis letter
+      if (w) { out.push(w + (amt === 2 ? "'" : '')); continue; }
+      w = NS_RIGHT_L.find(l => E.OPP[frame.corner[NS_RIGHT[l]]] === axis);     // opposite corner + walk
+      if (!w) throw new Error('frame resolution failed');
+      out.push(w + (amt === 2 ? "'" : ''));
+      for (let k = 0; k < amt % 3; k++) frame = frameOf(E.faceCompose(BYC_FP[axis], frame.fp));
     }
-    return C;
+    return { tokens: out, frame };
   }
-  function walkIdxOf(mis) {                              // W with phys = native then W
-    let nat = ID30;
-    for (const mi of mis) nat = pThen(nat, pPow(TWIST[NATIVE_AXIS[mi]], (mi & 1) ? 2 : 1));
-    const wIdx = GROUP_IDX.get(permKey(pThen(pInv(nat), emitPhysPerm(mis))));
-    if (wIdx === undefined) throw new Error('emission walk is not a rotation');
-    return wIdx;
-  }
+
+  // Leading-rotation candidates for the layer, nicest sheet spelling first
+  // (methodView picks the first that lands the built layer on the bottom).
+  // Each carries the engine frame the moves are emitted from + verified in,
+  // and the sheet spelling shown to the human — engine rotations are internal,
+  // sheet rotations are read at the table (both denote the same orientation).
+  const engFrameOf = engStr => {
+    let fp = E.FACE_ID;
+    for (const t of String(engStr).split(/\s+/).filter(Boolean)) {
+      const m = t.match(/^([xyz])(2'|2|')?$/), n = m[2] === "'" ? 3 : m[2] ? 2 : 1;
+      for (let i = 0; i < n; i++) fp = E.faceCompose(fp, rotBy.xyz[m[1]].fp);
+    }
+    return frameOf(fp);
+  };
+  const ENG_SINGLES = [];
+  for (const a of ['y', 'x', 'z']) for (const suf of ['', "'", '2']) ENG_SINGLES.push(a + suf);
+  const engByPhys = new Map([[permKey(physPerm([])), '']]);
+  const addEng = engStr => { const k = permKey(physPerm(E.parseAlg(engStr, 'ns'))); if (!engByPhys.has(k)) engByPhys.set(k, engStr); };
+  for (const t of ENG_SINGLES) addEng(t);
+  for (const a of ENG_SINGLES) for (const b of ENG_SINGLES) addEng(a + ' ' + b);
+  if (engByPhys.size !== 24) throw new Error('expected 24 engine rotations, got ' + engByPhys.size);
+  const LEAD = ROT24.map(r => {
+    const engStr = engByPhys.get(permKey(r.perm));
+    return { sheet: r.spell, engStr, frame: engFrameOf(engStr) };
+  });
+  const LEAD_BY_KEY = new Map(ROT24.map((r, i) => [permKey(r.perm), LEAD[i]]));
+
+  // The facelets a human holds after physically executing a parsed scramble —
+  // methodView's `heldFl`. Differs from toFacelets(state) by the scramble
+  // text's accumulated leftover rotation (a property of the TEXT, not the
+  // state: written free-corner letters each leave a 240° whole-cube rotation
+  // the engine absorbs into its parsing frame).
+  const heldFacelets = parsed => pApply(SOLVED_FL, physPerm(parsed));
 
   /* ---------- first-step target spaces ---------- */
   // D-anchored states per method (the complement of the built layer is free,
@@ -314,7 +357,12 @@ function makeSolverCore(E, dist, algData) {
             const toks = E.parseAlg(E.preprocessAlg(authored), 'ns');
             if (!toks) return;
             const { ns, nsToks } = foldLeadRots(authored, toks);
-            const phi = physPerm(nsToks);               // the body's physical action
+            const phi = physPermNS(nsToks);             // the body's physical action
+            // (physPermNS, not physPerm: ns texts are verbatim sheet strings,
+            // so mid-alg rotation tokens are SHEET letters — reading them as
+            // engine letters mis-indexed all 916 mid-rotation bodies and
+            // printed physically wrong setup rotations for them, found
+            // 2026-07-10 while reworking the Algorithms page display)
             const row = {
               uid: key + '::' + c.name + '::' + ai,
               ns, moves: E.countMoves(nsToks), phi,
@@ -349,9 +397,9 @@ function makeSolverCore(E, dist, algData) {
   /* ---------- the search ---------- */
   // search(scrambleState, opts) -> { byLength: {total: [items]}, dopt, truncated, work }
   // opts: { methods:{id:bool}, caps:{id:int}, budget }
-  // item: { pmoves:[ints], id, face, v, fin, total, row|null, rotIdx }
+  // item: { pmoves:[ints], id, face, v, fin, total, row|null }
   //   row = the finishing sheet alg (null when the first step already solves);
-  //   rotIdx = the ROT24 setup rotation under which the alg solves the junction.
+  //   the display rotations are derived per solution in methodView.
   function search(scr, opts) {
     const caps = {};
     for (const id of Object.keys(METHOD_DEFS))
@@ -387,61 +435,46 @@ function makeSolverCore(E, dist, algData) {
     dfs1(scr, [], -1);
 
     // phase 2: match each junction against the sheet algs that solve it — a
-    // junction J matches alg Φ from setup rotation R iff R(J) is in the alg's
-    // physical pre-state set. Membership is rotation-closed, so WHICH algs
-    // match is a property of the junction (looked up under all 24 rotations);
-    // but the rotation SHOWN is a property of the PATH: the human's junction
-    // is W(J) (W = the displayed step's emission walk), and the printed
-    // rotation is the nicest R with R(W(J)) in the alg's pre-state set.
+    // junction J is solved by alg Φ from SOME setup rotation iff one of the 24
+    // rotations of J is in Φ's physical pre-state set. Membership is
+    // rotation-closed, so this is a property of the junction alone; the actual
+    // display rotations (the leading rotation that builds the layer on the
+    // bottom, and the finish setup rotation) are derived per solution in
+    // methodView, which physically re-proves the whole line.
     const index = algIndex();
     const byLength = {};
     const seen = new Set();
     if (!truncated) for (const [ti, j] of junctions) {
       const solvedJ = dist[ti] === 0;
-      let matches = null, jKeys = null;
+      let matches = null;
       if (!solvedJ) {
         matches = [];
         const jArr = E.toFacelets(j.state);
-        jKeys = ROT24.map(r => flKey(pApply(jArr, r.perm)));
         const seenRow = new Set();
-        for (let ri = 0; ri < ROT24.length; ri++) {
-          const list = index.get(jKeys[ri]);
+        for (const r of ROT24) {
+          const list = index.get(flKey(pApply(jArr, r.perm)));
           if (!list) continue;
-          for (const row of list) {
-            if (seenRow.has(row.uid)) continue;
-            seenRow.add(row.uid);
-            matches.push(row);
-          }
+          for (const row of list) { if (!seenRow.has(row.uid)) { seenRow.add(row.uid); matches.push(row); } }
         }
       }
-      for (const p of j.paths) {
-        // key of W(J) under rotation ri == jKeys[ MUL24[W][ri] ]
-        const mul = (solvedJ || !matches.length) ? null : MUL24[walkIdxOf(p.seq)];
-        const rotFor = row => {
-          for (let ri = 0; ri < 24; ri++) if (row.preKeys.has(jKeys[mul[ri]])) return ri;
-          return -1;
-        };
-        for (const id of p.hits) {
-          const face = targets[id].get(ti);
-          const pkey = p.seq.join(',') + '|' + id + '|';
-          if (solvedJ) {
-            if (p.seq.length && !seen.has(pkey)) {
-              seen.add(pkey);
-              const item = { pmoves: p.seq.slice(), id, face, v: p.seq.length, fin: 0, total: p.seq.length, row: null, rotIdx: -1 };
-              (byLength[item.total] = byLength[item.total] || []).push(item);
-            }
-            continue;
-          }
-          for (const row of matches) {
-            const kk = pkey + row.uid;
-            if (seen.has(kk)) continue;
-            seen.add(kk);
-            const rotIdx = rotFor(row);
-            if (rotIdx < 0) continue;                    // cannot happen (rotation-closed)
-            const item = { pmoves: p.seq.slice(), id, face, v: p.seq.length, fin: row.moves,
-                           total: p.seq.length + row.moves, row, rotIdx };
+      for (const p of j.paths) for (const id of p.hits) {
+        const face = targets[id].get(ti);
+        const pkey = p.seq.join(',') + '|' + id + '|';
+        if (solvedJ) {
+          if (p.seq.length && !seen.has(pkey)) {
+            seen.add(pkey);
+            const item = { pmoves: p.seq.slice(), id, face, v: p.seq.length, fin: 0, total: p.seq.length, row: null };
             (byLength[item.total] = byLength[item.total] || []).push(item);
           }
+          continue;
+        }
+        for (const row of matches) {
+          const kk = pkey + row.uid;
+          if (seen.has(kk)) continue;
+          seen.add(kk);
+          const item = { pmoves: p.seq.slice(), id, face, v: p.seq.length, fin: row.moves,
+                         total: p.seq.length + row.moves, row };
+          (byLength[item.total] = byLength[item.total] || []).push(item);
         }
       }
     }
@@ -457,43 +490,147 @@ function makeSolverCore(E, dist, algData) {
   }
 
   /* ---------- method view (the staged reconstruction) ---------- */
-  // The first step as written from the start, the setup rotation (the item's
-  // matched ROT24 entry, spelled in the sheets' physical letters — leading
-  // rotations were folded out of the text at index time, so this one printed
-  // rotation is the whole setup), and the algorithm text from its first turn
-  // on. ok = a full physical proof, run from the DISPLAYED texts: the first
-  // step engine-lands on the junction (its identity-start evaluation is
-  // corpus-validated physical), and the facelets a human holds after
-  // physically executing the displayed first step, rotated by the printed
-  // rotation and pushed through the body's physical perm, are a solved cube
-  // (any orientation). The layer label reads through the emission frame —
-  // the human's view of a substituted (b-for-UFL) step is walk-rotated.
-  function methodView(scr, item) {
-    const pE = emitWCA(item.pmoves, ID_FRAME);
-    const vmoves = pE.tokens.join(' ');
-    const q = FACES.find(w => pE.frame.fp[w] === item.face);   // in-hand position of the layer
-    const nsP = E.wcaToNS(vmoves);
-    if (!item.row) {
-      const parsed = E.parseAlg(E.preprocessAlg(nsP), 'ns');
-      const ok = !!(parsed && E.eq(E.applyParsed(parsed, E.copy(scr), syms, rotBy), E.solved()));
-      return { vmoves, rot: '', alg: '', name: null, rating: '', suspect: false, face: q, text: nsP, ok };
-    }
-    const { perm: R, spell: rot } = ROT24[item.rotIdx];
-    // the displayed first step must engine-land exactly on the junction state
+  // Builds the whole line the way a solver reads it, all in RubiksSkewb
+  // notation:  [lead rotation]  [first layer in R/B/r/b]  [setup rotation]
+  //            [finish alg].
+  // `heldFl` is the facelets the human actually holds after scrambling — the
+  // site passes heldFacelets(parsed scramble); state-only callers default to
+  // the raw pinned facelets (identical when the scramble text has no written
+  // free-corner letters). The two differ by a whole-cube rotation G, so the
+  // display and the engine bookkeeping split: the layer tokens are emitted
+  // (and engine-verified against the junction) from the orientation G∘lead,
+  // while the printed lead is what the human turns from their real hold.
+  // The lead rotation is chosen so the built layer ends on the bottom (like
+  // the sheets and the trainer); the layer is emitted in the sheet vocabulary
+  // {R,B,r,b}; the setup rotation then turns to the finish alg's hold. Every
+  // displayed line is physically re-proved end to end from the held facelets:
+  //  - the emitted layer engine-lands exactly on the junction state, and
+  //  - the facelets a human holds after physically executing [lead][layer]
+  //    from heldFl, turned by the setup rotation and pushed through the
+  //    finish's physical perm, are a solved cube (in any orientation).
+  function methodView(scr, item, heldFl) {
+    const rawFl = E.toFacelets(scr);
+    heldFl = heldFl || rawFl;
+    // G: raw pinned facelets -> the hold in hand (exists for every hold that
+    // really is this state; a mismatched heldFl just fails every proof below)
+    const G = ROT24.find(r => flKey(pApply(rawFl, r.perm)) === flKey(heldFl)) || null;
+    const emitFrom = rhoD => G && LEAD_BY_KEY.get(permKey(pThen(G.perm, rhoD.perm)));
     const jState = E.copy(scr);
     for (const m of item.pmoves) E.applyMoveIdx(jState, m);
-    const parsed = E.parseAlg(E.preprocessAlg(nsP), 'ns');
-    const okFirst = !!(parsed && E.eq(E.applyParsed(parsed, E.copy(scr), syms, rotBy), jState));
-    // physical proof of the finish, from the junction the human holds
-    const jPhys = pApply(E.toFacelets(scr), physPerm(parsed || []));
-    const okBody = !!parsed && SOLVED24_KEYS.has(flKey(pApply(pApply(jPhys, R), item.row.phi)));
-    const text = [nsP, rot, item.row.ns].filter(Boolean).join(' ');
-    return { vmoves, rot, alg: item.row.ns, name: item.row.name,
-             rating: item.row.rating, suspect: item.row.suspect, face: q, text, ok: okFirst && okBody };
+
+    if (!item.row) {   // the first step already solves the puzzle — no layer/finish
+      // no lead needed: a solved cube is solved in any orientation, so the
+      // emission from G's own orientation always physically solves from heldFl
+      const cand = emitFrom(ROT24[0]);
+      let first = '', endFl = null, parsed = null;
+      if (cand) {
+        try { first = emitNS(item.pmoves, cand.frame).tokens.join(' '); } catch (e) { first = ''; }
+        parsed = first ? E.parseAlg(E.preprocessAlg((cand.engStr ? cand.engStr + ' ' : '') + first), 'ns') : null;
+        // physical result from heldFl of executing `first` == raw ∘ [engStr][first]
+        if (parsed) endFl = pApply(rawFl, physPerm(parsed));
+      }
+      const ok = !!(parsed && E.eq(E.applyParsed(parsed, E.copy(scr), syms, rotBy), E.solved())
+                    && endFl && SOLVED24_KEYS.has(flKey(endFl)));
+      const q = ok ? FACES.find(f => endFl[FIDX[f] * 5] === FIDX[item.face]) : item.face;
+      return { first, lead: '', rot: '', alg: '', name: null, rating: '', suspect: false, face: q, text: first, ok };
+    }
+
+    const jFl = E.toFacelets(jState);
+    // ROT24 rotation ρ relating the pinned junction facelets to what the human
+    // physically holds after [lead][layer]; the built layer then sits on ρ(item.face)
+    const rotBetween = jPhys => ROT24.find(r => flKey(pApply(jFl, r.perm)) === flKey(jPhys)) || null;
+    const layerFaceUnder = rho => FACES.find(f => rho.perm[FIDX[f] * 5] === FIDX[item.face] * 5);
+
+    // pick the leading rotation: nicest that lands the layer on the bottom
+    // (fall back to the nicest valid emission if — never observed — none does)
+    let best = null;
+    if (G) for (const rhoD of ROT24) {
+      const cand = emitFrom(rhoD);
+      let tokens;
+      try { tokens = emitNS(item.pmoves, cand.frame).tokens; } catch (e) { continue; }
+      const engLine = (cand.engStr ? cand.engStr + ' ' : '') + tokens.join(' ');
+      const parsed = E.parseAlg(E.preprocessAlg(engLine), 'ns');
+      if (!parsed || !E.eq(E.applyParsed(parsed, E.copy(scr), syms, rotBy), jState)) continue;
+      // physical hold after executing [rhoD][tokens] from heldFl — equals the
+      // raw-side evaluation because physPerm(engStr) is exactly G∘rhoD
+      const jPhys = pApply(rawFl, physPerm(parsed));
+      const rho = rotBetween(jPhys);
+      if (!rho) continue;
+      const entry = { rhoD, first: tokens.join(' '), jPhys, face: layerFaceUnder(rho) };
+      if (!best) best = entry;                 // fallback = first valid emission
+      if (entry.face === 'D') { best = entry; break; }
+    }
+
+    // finish setup rotation: nicest R with R(held junction) in the alg's pre-state set
+    let R = null, rot = '';
+    if (best) for (const r of ROT24)
+      if (item.row.preKeys.has(flKey(pApply(best.jPhys, r.perm)))) { R = r.perm; rot = r.spell; break; }
+    const okBody = !!(best && R) && SOLVED24_KEYS.has(flKey(pApply(pApply(best.jPhys, R), item.row.phi)));
+    const first = best ? best.first : '';
+    const lead = best ? best.rhoD.spell : '';
+    const text = [lead, first, rot, item.row.ns].filter(Boolean).join(' ');
+    return { first, lead, rot, alg: item.row.ns, name: item.row.name, rating: item.row.rating,
+             suspect: item.row.suspect, face: best ? best.face : item.face, text, ok: okBody };
   }
 
-  return { emitWCA, emitPhysPerm, walkIdxOf, ROT24, physPerm, sheetStrPerm, SOLVED24_KEYS, flKey, pApply, pInv,
-           foldLeadRots, targets, dAnchored, algIndex, search, methodView, METHOD_DEFS, syms, rotBy };
+  /* ---------- sheet-text display helpers (the Algorithms page) ---------- */
+  // The pictured hold of a case group: the raw pinned facelets — the hold the
+  // authored texts physically execute from — rotated by the nicest sheet
+  // rotation so the built layer sits on D when the state lies in one of the
+  // method spaces (fl/tcll/eg2). `rotated: false` means the picture IS the
+  // raw pinned frame; states outside every method space (odd-position alg
+  // groups + the 5 sheet outliers) fall back to it.
+  let _dSets = null;   // per method: the D-anchored state idx set (layer ON D)
+  const dSets = () => _dSets || (_dSets = Object.keys(METHOD_DEFS).map(id => {
+    const s = new Set();
+    for (const st of dAnchored(id)) s.add(E.idx(st));
+    return s;
+  }));
+  function layerDownFacelets(state) {
+    const raw = E.toFacelets(state);
+    const ix = E.idx(state);
+    // already layer-down? check D-anchored membership directly — the targets
+    // map keeps only ONE face per state, so a multi-layer state near solved
+    // can report a non-D face even though a built layer sits on D
+    if (dSets().some(s => s.has(ix))) return { fl: raw, rotated: false };
+    let face = null;
+    for (const id of Object.keys(METHOD_DEFS)) {
+      const f = targets[id].get(ix);
+      if (f) { face = f; break; }
+    }
+    if (!face) return { fl: raw, rotated: false };
+    for (const r of ROT24)                    // picture's D shows the layer face
+      if (r.perm[FIDX.D * 5] === FIDX[face] * 5) return { fl: pApply(raw, r.perm), rotated: true };
+    return { fl: raw, rotated: false };       // unreachable: some rotation always maps face->D
+  }
+
+  // Display line for one authored text from the pictured hold `heldFl`:
+  //   1. the text verbatim when it physically solves from the picture (always
+  //      true when the picture is the raw pinned frame — the sheets' own
+  //      leading rotations are the correct start there);
+  //   2. else the folded body behind the nicest re-derived lead rotation
+  //      (`rederived: true`) — the picture was rotated, so the start changes;
+  //   3. else ok:false (unparseable slash-alternative texts; the caller shows
+  //      the authored text and flags it).
+  // `notation` is passed to parseAlg ('ns' for authored sheet texts — the
+  // default — 'wca' for rotationless admin-added algs).
+  function sheetLineFor(heldFl, text, notation) {
+    const toks = E.parseAlg(E.preprocessAlg(text), notation === 'wca' ? undefined : 'ns');
+    if (!toks) return { text: String(text), ok: false };
+    if (SOLVED24_KEYS.has(flKey(pApply(heldFl, physPermNS(toks)))))
+      return { text: String(text), ok: true };
+    const { ns, nsToks } = foldLeadRots(String(text), toks);
+    const phi = physPermNS(nsToks), inv = pInv(phi);
+    const pre = new Set(SOLVED24.map(S => flKey(pApply(S, inv))));
+    for (const r of ROT24)
+      if (pre.has(flKey(pApply(heldFl, r.perm))))
+        return { text: [r.spell, ns].filter(Boolean).join(' '), ok: true, rederived: true };
+    return { text: String(text), ok: false };
+  }
+
+  return { emitNS, LEAD, ROT24, physPerm, physPermNS, sheetStrPerm, heldFacelets, SOLVED24_KEYS, flKey, pApply, pInv,
+           foldLeadRots, targets, dAnchored, algIndex, search, methodView, METHOD_DEFS, syms, rotBy,
+           layerDownFacelets, sheetLineFor };
 }
 if (typeof module !== 'undefined') module.exports = { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY };
 window.OOSolverCore=module.exports;})();

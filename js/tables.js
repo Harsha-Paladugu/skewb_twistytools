@@ -8,7 +8,7 @@
  * that cache, with SEPARATE keys per shape so they can't collide:
  *
  *   oo-dist-v1     -> { dist }                  (built by either page, reused by both)
- *   oo-classes-v2  -> { reps, depths }          (census only; 24-sym fold, 131,391 classes)
+ *   oo-classes-v4  -> { reps, depths }          (census only; hold-24 fold, 132,315 entries)
  *
  * Loaded as a classic browser script before js/oo.js / js/solver.js. The engine
  * (window.OOEngine) is passed in, so this file has no load-order dep on it beyond
@@ -21,10 +21,18 @@
   const module = { exports: {} };
   const DB_NAME = 'skewbiks-oo', STORE = 't';
   const KEY_DIST = 'oo-dist-v1';        // { dist: ArrayBuffer }
-  // v2: classes fold all 24 symmetries (12 rotations + 12 mirrors) -> 131,391
-  // classes; v1 folded rotations only (262,674) and is deleted on sight.
-  const KEY_CLASSES = 'oo-classes-v2';  // { reps: ArrayBuffer, depths: ArrayBuffer }
+  // v4 (2026-07-10): classes fold ALL 24 PROPER rotations — the engine's 12
+  // tetrad-preserving syms PLUS the 12 tetrad-swapping "re-holds", which act
+  // via the ι re-anchoring map (E.makeHoldSym; ground-truth §Symmetry) ->
+  // 132,315 entries. A position and its LR mirror stay SEPARATE entries
+  // (re-holds preserve handedness, mirrors flip it; community solutions are
+  // righty-tuned). Stale keys deleted on sight: v3 folded the 12 rotations
+  // only (262,674), v2 folded 12 rotations + mirrors (131,391), v1 was an
+  // older rotation-only shape.
+  const KEY_CLASSES = 'oo-classes-v4';  // { reps: ArrayBuffer, depths: ArrayBuffer }
   const KEY_CLASSES_V1 = 'oo-classes-v1';
+  const KEY_CLASSES_V2 = 'oo-classes-v2';
+  const KEY_CLASSES_V3 = 'oo-classes-v3';
   const REACHABLE = 3149280;            // progress denominator (reachable states)
 
   function openDB() {
@@ -101,29 +109,39 @@
   }
 
   // Canonical-class enumeration (requires dist) -> { reps:Uint32Array, depths:Uint8Array }.
-  // Classes fold the full 24-element symmetry group (12 rotations + 12 mirror
-  // images), so a position and its mirror are ONE class: 131,391 classes
-  // (oracle: tools/verify-space.mjs). Cached under KEY_CLASSES.
+  // Classes fold all 24 PROPER rotations: a hold-24 orbit is the 12 rotation
+  // images of s PLUS the 12 rotation images of ι(s) — the re-anchored 90°
+  // re-hold image (E.makeHoldSym; ι needs dist for a solving word, which is
+  // why the class build takes dist). 132,315 entries; a position and its LR
+  // mirror stay separate (oracles: tools/verify-space.mjs, ground-truth
+  // §Symmetry, both machine-verified 2026-07-10). Cached under KEY_CLASSES.
   async function loadOrBuildClassTables(E, dist, report, tick) {
-    idbDel(KEY_CLASSES_V1); // reclaim the stale rotation-only table (~1.3 MB)
+    idbDel(KEY_CLASSES_V1); // reclaim the stale v1 rotation-only table (~1.3 MB)
+    idbDel(KEY_CLASSES_V2); // reclaim the stale v2 24-sym-fold table (mirror split, 2026-07-10)
+    idbDel(KEY_CLASSES_V3); // reclaim the stale v3 12-rotation table (hold-24 re-fold, 2026-07-10)
     const cached = await idbGet(KEY_CLASSES);
     if (cached && cached.reps && cached.depths) {
       if (report) report('cache', 1, 1);
       return { reps: new Uint32Array(cached.reps), depths: new Uint8Array(cached.depths) };
     }
     // Ascending orbit sweep: the first unvisited reachable index is its
-    // 24-orbit's minimum, i.e. the class rep. Identical reps/depths to
-    // canonicalizing every state (verified in Node against makeFullCanon),
-    // at ~1/24 the symmetry applications: 131,391 reps x 24 instead of
-    // 3,149,280 states x 24.
-    const syms = E.buildSyms().all;
+    // 24-orbit's minimum, i.e. the class rep (= its makeHold24Canon id).
+    // Pinned by tools/verify-space.mjs, which replicates this sweep verbatim
+    // and requires it to emit exactly the 132,315 entry reps derived
+    // independently from the ι partner map ("tables.js sweep replication"
+    // check) — keep the two loops in lockstep when editing either. Identical
+    // reps/depths to canonicalizing every state, at a fraction of the work:
+    // one ι + 24 symmetry applications per REP (132,315) instead of per state.
+    const syms = E.buildSyms();
+    const hold = E.makeHoldSym(syms);
     const visited = new Uint8Array(E.NSLOTS);
     const reps = [], depths = [];
     for (let i = 0; i < E.NSLOTS; i++) {
       if ((i & 65535) === 65535) { if (report) report('classes', i, E.NSLOTS); if (tick) await tick(); }
       if (dist[i] < 0 || visited[i]) continue;
       const s = E.unidx(i);
-      for (const sym of syms) visited[E.idx(sym.apply(s))] = 1;
+      const t = hold.iota(s, dist);
+      for (const sym of syms.rots) { visited[E.idx(sym.apply(s))] = 1; visited[E.idx(sym.apply(t))] = 1; }
       reps.push(i); depths.push(dist[i]);
     }
     const repsArr = Uint32Array.from(reps), depthsArr = Uint8Array.from(depths);

@@ -59,12 +59,10 @@ function setNota(v) {
   try { localStorage.setItem(NOTA_KEY, NOTA); } catch (e) {}
   render();
 }
-const dispAlg = s => (s && NOTA === 'ns') ? E.wcaToNS(s) : s;   // engine WCA string -> active notation
-
 /* ---- state ---- */
 const UI = {
   scramble: '',
-  parsed: null, state: null, dopt: null,
+  parsed: null, state: null, heldFl: null, dopt: null,
   methods: { fl: true, tcll: true, eg2: true },
   caps: Object.fromEntries(Object.keys(CORE.METHOD_DEFS).map(id => [id, CORE.METHOD_DEFS[id].cap])),
   buckets: null,            // total movecount -> items (raw from core)
@@ -86,17 +84,22 @@ const VLABEL = {
 };
 const RATING_TAG = { best: 'best', poor: 'poor' };
 
-// build the staged reconstruction (first step / rotation / the sheet's
-// algorithm verbatim / full line) for a solution
+// build the staged reconstruction (lead rotation / first layer / setup
+// rotation / the sheet's algorithm / full line) for a solution. Everything is
+// RubiksSkewb notation: the layer uses only {R,B,r,b}, and rotations (start
+// and mid) are in the sheets' physical letters — the engine's internal x/y/z
+// are never shown (see the core's physical model). The reconstruction is
+// derived from UI.heldFl — the facelets the user actually holds after
+// executing the scramble TEXT — not from the state's raw facelets, which sit
+// rotated in hand whenever the scramble contains written free-corner letters
+// (WCA B / NS R L f b); see the core's THE HOLD note.
 function reconstruction(it) {
-  const mv = C.methodView(UI.state, it);
+  const mv = C.methodView(UI.state, it, UI.heldFl);
   if (!mv || !mv.ok) return null;
   const lines = [];
-  lines.push({ mv: dispAlg(mv.vmoves) || '-', cmt: '// ' + VLABEL[it.id](mv.face) });
+  if (mv.lead) lines.push({ mv: mv.lead, cmt: '// rotate — build the layer from here' });
+  lines.push({ mv: mv.first || '-', cmt: '// ' + VLABEL[it.id](mv.face) });
   if (it.row) {
-    // the rotation is spelled in the sheets' physical letters (the letters
-    // this community reads) in both notation modes — the engine's internal
-    // x/y/z letters are never shown (see the core's physical model)
     if (mv.rot) lines.push({ mv: mv.rot, cmt: '// rotate — the algorithm runs from here' });
     const tag = RATING_TAG[mv.rating] ? ' · ' + RATING_TAG[mv.rating] : '';
     lines.push({ mv: mv.alg, cmt: '// ' + mv.name + tag + (mv.suspect ? ' · suspect' : '') });
@@ -157,6 +160,7 @@ function onSolve() {
   if (!parsed) { toast('We couldn’t read that scramble. Use ' + (NOTA === 'ns' ? 'NS' : 'WCA') + ' notation (rotations are fine).'); return; }
   const st = E.applyParsed(parsed, E.solved(), C.syms, C.rotBy);
   UI.scramble = txt; UI.parsed = parsed; UI.state = st;
+  UI.heldFl = C.heldFacelets(parsed);   // the cube as scrambled in hand (per TEXT)
   UI.dopt = dist[E.idx(st)];
   UI.buckets = null; UI.showAll = new Set(); UI.moreLens = false; UI.truncated = false;
   if (UI.dopt === 0) { render(); return; }
@@ -192,7 +196,7 @@ function renderInner() {
 
   main.appendChild(h('section', { class: 'homeintro' },
     h('h1', null, 'Method solver'),
-    h('p', { class: 'lede' }, 'Paste a scramble and get solutions you can actually find at the table: a first layer — or a TCLL / EG2 pre-layer — into an algorithm from the sheets, organized by move count. Every solution is checked by the computer.')));
+    h('p', { class: 'lede' }, 'Paste a scramble and get solutions you can actually find at the table: a first layer — or a TCLL / EG2 pre-layer — into an algorithm from the sheets, organized by move count. Solutions are shown in RubiksSkewb notation; every one is checked by the computer.')));
 
   /* scramble row + notation switch */
   main.appendChild(h('div', { class: 'searchrow' },
@@ -200,7 +204,10 @@ function renderInner() {
       placeholder: NOTA === 'ns' ? "Scramble, e.g.  r B' b l' B r' b'" : "Scramble, e.g.  R U' B L' U R' B'",
       onkeydown: ev => { if (ev.key === 'Enter') onSolve(); } }),
     h('button', { class: 'primary', onclick: onSolve }, 'Solve'),
-    h('div', { class: 'notaswitch', role: 'group', 'aria-label': 'notation' },
+    // the switch selects how the SCRAMBLE is read; solutions are always shown
+    // in RubiksSkewb notation (see the lede)
+    h('div', { class: 'notaswitch', role: 'group', 'aria-label': 'scramble notation',
+      title: 'how your scramble is read (solutions are always shown in RubiksSkewb notation)' },
       h('button', { class: 'notabtn' + (NOTA === 'wca' ? ' on' : ''), onclick: () => setNota('wca') }, 'WCA'),
       h('button', { class: 'notabtn' + (NOTA === 'ns' ? ' on' : ''), onclick: () => setNota('ns') }, 'NS'))));
 
