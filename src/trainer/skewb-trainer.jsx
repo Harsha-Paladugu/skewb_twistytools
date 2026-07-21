@@ -464,24 +464,9 @@ export default function SkewbTrainer() {
 
   // best-effort name for the state left after the user's layer: exact stateKey
   // match over every sheet case's 4 presentation states (built lazily once)
-  const caseIndexRef = useRef(null);
-  const caseOfState = useCallback((st) => {
-    if (!st || !ready) return null;
-    if (E.eq(st, E.solved())) return { solved: true };
-    if (!caseIndexRef.current) {
-      const map = new Map();
-      for (const sub of model().subsets) {
-        for (const c of sub.cases) {
-          const cp = core.casePres(c);
-          if (!cp.ok) continue;
-          const a0 = DIRS.indexOf(cp.anchorDir);
-          cp.pks.forEach((pk, p) => { if (!map.has(pk)) map.set(pk, { c, d: (p + a0) % 4, subset: sub.key }); });
-        }
-      }
-      caseIndexRef.current = map;
-    }
-    return caseIndexRef.current.get(E.stateKey(st)) || null;
-  }, [ready]);
+  // pure model lookup — lives in skewb-core (Node-tested); the core memoizes
+  // its index per model object
+  const caseOfState = useCallback((st) => (ready ? core.caseOfState(model(), st) : null), [ready]);
 
   const nextOnelook = useCallback(() => {
     setPhase("ready"); setLast(null);

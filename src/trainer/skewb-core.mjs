@@ -153,6 +153,29 @@ export function createCore(E) {
     return out.sort((x, y) => (x.k - y.k) || (!!x.a.suspect - !!y.a.suspect) || (rateRank(x.a) - rateRank(y.a)) || (x.ix - y.ix));
   }
 
+  // Reverse lookup: which (case, absolute direction, subset) a state shows,
+  // across the whole model — the one-look reveal's best-effort case name.
+  // First case wins per render key (model order); the index builds lazily once
+  // per model object. The solved state gets a sentinel.
+  let _caseIndex = null;
+  function caseOfState(model, st) {
+    if (!st) return null;
+    if (E.eq(st, E.solved())) return { solved: true };
+    if (!_caseIndex || _caseIndex.model !== model) {
+      const map = new Map();
+      for (const sub of model.subsets) {
+        for (const c of sub.cases) {
+          const cp = casePres(c);
+          if (!cp.ok) continue;
+          const a0 = DIRS.indexOf(cp.anchorDir);
+          cp.pks.forEach((pk, p) => { if (!map.has(pk)) map.set(pk, { c, d: (p + a0) % 4, subset: sub.key }); });
+        }
+      }
+      _caseIndex = { model, map };
+    }
+    return _caseIndex.map.get(E.stateKey(st)) || null;
+  }
+
   function firstMoveOf(row) {
     if (row.a && row.a.firstMove) return row.a.firstMove;
     const flat = E.nsToWCA(E.wcaToNS(row.core)) || row.core;
@@ -536,7 +559,7 @@ export function createCore(E) {
   }
 
   return {
-    buildModel, navSorted, casePres, stateForDir, algsForDir, firstMoveOf,
+    buildModel, navSorted, casePres, stateForDir, algsForDir, firstMoveOf, caseOfState,
     maskedScramble, randomReachable, descend, descentLines, toWCA,
     layerSolved, anyLayerSolved, layerSeedSpec, flSeedIndices, buildFLDist,
     randomAtFLDist, randomDLayerState, preimageOfLayer, physPermOf,

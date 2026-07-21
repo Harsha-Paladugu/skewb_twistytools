@@ -39,6 +39,18 @@ t('model: nav groups partition every subset (no strays)', () =>
   model.subsets.every((s) =>
     s.groups.reduce((a, g) => a + g.cases.length, 0) === s.cases.length &&
     !s.groups.some((g) => g.label === 'Other')));
+t('model: caseOfState resolves every presentation to (case, dir); solved is a sentinel', () => {
+  const sub = model.subsets[0];
+  const c = sub.cases.find((x) => core.casePres(x).ok);
+  const cp = core.casePres(c);
+  const a0 = DIRS.indexOf(cp.anchorDir);
+  for (let p = 0; p < 4; p++) {
+    const hit = core.caseOfState(model, E.keyToState(cp.pks[p]));
+    if (!hit || hit.c !== c || hit.d !== (p + a0) % 4 || hit.subset !== sub.key) return false;
+  }
+  if (!core.caseOfState(model, E.solved()).solved) return false;
+  return core.caseOfState(model, null) === null;
+});
 t('model: navSorted orders EG2 by the authored id order', () => {
   const eg2 = model.subsets.find((s) => s.key === 'EG2');
   const sorted = core.navSorted(eg2, eg2.groups[0].cases);
