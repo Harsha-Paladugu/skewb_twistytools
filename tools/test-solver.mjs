@@ -17,32 +17,16 @@
  * Run: node tools/test-solver.mjs   (exit 0 = OK, 1 = a test failed)
  * Builds the full BFS distance table once (~30 s), like test-trainer.
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
-import { readFileSync } from 'fs';
 import { buildDist } from './lib/bfs-dist.mjs';
+import { loadEngine, loadSolverCore, loadAlgData } from './lib/load-engine.mjs';
+import { t, finish, rndInt } from './lib/harness.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
-require(path.join(ROOT, 'js', 'solver-core.js'));
-const { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY } = globalThis.window.OOSolverCore;
-const algData = JSON.parse(readFileSync(path.join(ROOT, 'data', 'skewb_algs.json'), 'utf8'));
-
-let passed = 0, failed = 0;
-function t(name, fn) {
-  try {
-    const r = fn();
-    if (r === false) throw new Error('assertion returned false');
-    console.log('✓ ' + name); passed++;
-  } catch (e) {
-    console.log('✗ ' + name + '\n    ' + (e && e.message)); failed++;
-  }
-}
-const rndInt = n => Math.floor(Math.random() * n);
+const E = loadEngine();
+const { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY } = loadSolverCore();
+const algData = loadAlgData();
+// every subset container the JSON carries, merged the way the pages read it
+const SUBS = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
+const ROT_TOKEN = /^[xyz](2'|2|')?$/;
 
 console.log('building distance table…');
 const dist = buildDist(E);
@@ -76,12 +60,11 @@ t('D-anchored predicates: layer pieces as specced per method', () => {
   }
 });
 t('every imported sheet case sits in its method space (minus 5 known outliers)', () => {
-  const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
   const expect = { NS: ['fl', 134, 135], EG2: ['eg2', 136, 136], TCLL: ['tcll', 1076, 1080] };
   for (const key of Object.keys(expect)) {
     const [meth, want, total] = expect[key];
     let got = 0, seen = 0;
-    for (const c of subs[key].cases) {
+    for (const c of SUBS[key].cases) {
       let st = null;
       for (const a of c.algs || []) { st = E.caseStateOf(a.alg); if (st) break; }
       if (!st) continue;
@@ -119,7 +102,7 @@ t('ROT24 + LEAD: 24 orientations (identity first, sheet spellings); LEAD covers 
   const seen = new Set();
   for (const r of C.ROT24) {
     for (const tok of r.spell.split(/\s+/).filter(Boolean))
-      if (!/^[xyz](2'|2|')?$/.test(tok)) throw new Error('not a rotation token: ' + tok);
+      if (!ROT_TOKEN.test(tok)) throw new Error('not a rotation token: ' + tok);
     seen.add(r.perm.join(','));
   }
   if (seen.size !== 24) throw new Error('duplicate perms: ' + seen.size);
@@ -135,9 +118,8 @@ t('physical corpus anchor: every imported text solves its WCA-field case state u
   // orientation. Machine-established 2026-07-10: of the 928 mid-rotation
   // texts, 916 pass ONLY under this reading (12 are the unparseable slash
   // texts) and ZERO under the engine-letter reading physPerm used before.
-  const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
   let checked = 0;
-  for (const key of Object.keys(subs)) for (const c of subs[key].cases || [])
+  for (const key of Object.keys(SUBS)) for (const c of SUBS[key].cases || [])
     for (const a of c.algs || []) {
       const toks = E.parseAlg(E.preprocessAlg(a.ns || a.alg), 'ns');
       if (!toks) continue;
@@ -220,8 +202,7 @@ const FIXTURES = [
 ];
 const NS_BODIES = (() => {  // display-membership oracle: every shipped text's token
   const s = new Set();      // stream AFTER its leading rotations (independent fold)
-  const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
-  for (const key of Object.keys(subs)) for (const c of subs[key].cases || [])
+  for (const key of Object.keys(SUBS)) for (const c of SUBS[key].cases || [])
     for (const a of c.algs || []) {
       const p = E.parseAlg(E.preprocessAlg(a.ns || a.alg), 'ns');
       if (!p) continue;
@@ -231,7 +212,7 @@ const NS_BODIES = (() => {  // display-membership oracle: every shipped text's t
     }
   return s;
 })();
-const isRot = s => s === '' || s.split(/\s+/).filter(Boolean).every(t => /^[xyz](2'|2|')?$/.test(t));
+const isRot = s => s === '' || s.split(/\s+/).filter(Boolean).every(tok => ROT_TOKEN.test(tok));
 // independent physical proof of a displayed reconstruction, reassembled from
 // its SEPARATE fields (lead / first / setup rot / alg) and executed from the
 // facelets the human actually HOLDS (heldFl — physPerm of the scramble text,
@@ -355,14 +336,13 @@ t("USER bug 2026-07-10: lead rotation derives from the held facelets, not the pi
 // itself a valid sheet text, so each is independently re-proved here by one
 // fresh parse + physPermNS from the pictured facelets.
 t('algs display: 1420 groups, 9 pictured rotated; 3073 verbatim / 9 rederived / 34 unparseable; every line re-proves', () => {
-  const subs = { ...(algData.subsets || {}), ...(algData.other_subsets || {}) };
   const strip = alg => {
     const tk = String(alg).trim().split(/\s+/).filter(Boolean);
-    while (tk.length && /^[xyz](2'|2|')?$/.test(tk[tk.length - 1])) tk.pop();
+    while (tk.length && ROT_TOKEN.test(tk[tk.length - 1])) tk.pop();
     return tk.join(' ');
   };
   let groups = 0, rotated = 0, verbatim = 0, rederived = 0, warn = 0;
-  for (const key of Object.keys(subs)) for (const c of subs[key].cases || []) {
+  for (const key of Object.keys(SUBS)) for (const c of SUBS[key].cases || []) {
     const byState = new Map();
     for (const a of c.algs || []) {
       const st = E.caseStateOf(strip(E.normAlg(a.alg)));
@@ -433,5 +413,4 @@ t('constructed first-step + sheet-alg decompositions are found (50 randomized)',
   if (done < 50) throw new Error('only ' + done + ' constructions in ' + tries + ' tries');
 });
 
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+finish();

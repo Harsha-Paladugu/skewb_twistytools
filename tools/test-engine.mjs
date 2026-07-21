@@ -8,28 +8,11 @@
  *
  * Run: node tools/test-engine.mjs   (exit 0 = OK, 1 = a test failed)
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import { buildDist } from './lib/bfs-dist.mjs';
+import { loadEngine } from './lib/load-engine.mjs';
+import { t, finish, rndInt } from './lib/harness.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
-
-let passed = 0, failed = 0;
-function t(name, fn) {
-  try {
-    const r = fn();
-    if (r === false) throw new Error('assertion returned false');
-    console.log('✓ ' + name); passed++;
-  } catch (e) {
-    console.log('✗ ' + name + '\n    ' + (e && e.message)); failed++;
-  }
-}
-const rndInt = n => Math.floor(Math.random() * n);
+const E = loadEngine();
 function rndState(moves = 30) {
   const s = E.solved();
   for (let i = 0; i < moves; i++) E.applyMoveIdx(s, rndInt(8));
@@ -42,6 +25,8 @@ function rndWcaAlg(n) {
 }
 const SYMS = E.buildSyms();
 const ROTBY = E.makeFrames(SYMS);
+// state an alg string reaches from solved (nota: undefined = WCA, 'ns' = sheet letters)
+const stOf = (a, nota) => E.applyParsed(E.parseAlg(a, nota), E.solved(), SYMS, ROTBY);
 
 // ---------------- notation ----------------
 t('parseAlg: clean alg parses to one token per move', () => {
@@ -154,7 +139,7 @@ t('bridge: R/U/L-only algs — facelet path equals applyParsed', () => {
   for (let i = 0; i < 30; i++) {
     const a = rndWcaAlg(10).replace(/B/g, 'R');
     const viaF = E.fromFacelets(ffApply(a));
-    const viaP = E.applyParsed(E.parseAlg(a), E.solved(), SYMS, ROTBY);
+    const viaP = stOf(a);
     if (!E.eq(viaF, viaP)) return false;
   }
   return true;
@@ -188,7 +173,7 @@ t('bridge: facelet path and applyParsed agree on solvedness (incl. B algs)', () 
     const w = rndWcaAlg(6);
     const a = i % 2 ? w + ' ' + E.invertAlg(w) : rndWcaAlg(8);
     const ffSolved = solvedSet.has(ffApply(a).join());
-    const stSolved = E.eq(E.applyParsed(E.parseAlg(a), E.solved(), SYMS, ROTBY), E.solved());
+    const stSolved = E.eq(stOf(a), E.solved());
     if (ffSolved !== stSolved) return false;
   }
   return true;
@@ -201,19 +186,19 @@ t('bridge: facelet path and applyParsed agree on solvedness (incl. B algs)', () 
 // white/red/green (UFL) corner never appears to move or twist.
 t('display: toFixedFacelets matches every single-move TNoodle vector (incl. B/B\')', () => {
   for (const [tok, want] of Object.entries(VEC)) {
-    const st = E.applyParsed(E.parseAlg(tok), E.solved(), SYMS, ROTBY);
+    const st = stOf(tok);
     if (E.toFixedFacelets(st).join() !== FSTR(want)) return false;
   }
   return true;
 });
 t('display: KPW 2015 scramble renders the published fixed-frame state', () => {
-  const st = E.applyParsed(E.parseAlg("L R L U' B R' U' R' L R B"), E.solved(), SYMS, ROTBY);
+  const st = stOf("L R L U' B R' U' R' L R B");
   return E.toFixedFacelets(st).join() === FSTR('UUBUB LDDBL DFRLU BFRRU FRLFD RLFBD');
 });
 t('display: toFixedFacelets == fixed-frame facelet path for random WCA algs', () => {
   for (let i = 0; i < 40; i++) {
     const a = rndWcaAlg(1 + rndInt(12));
-    const st = E.applyParsed(E.parseAlg(a), E.solved(), SYMS, ROTBY);
+    const st = stOf(a);
     if (E.toFixedFacelets(st).join() !== ffApply(a).join()) return false;
   }
   return true;
@@ -363,13 +348,12 @@ t('nativeToWCA: converted alg reproduces the native state, same length', () => {
     for (let k = 0; k < n; k++) { const m = rndInt(8); toks.push(E.MOVES[m]); E.applyMoveIdx(s, m); }
     const wca = E.nativeToWCA(toks.join(' '), ROTBY);
     if (E.countMoves(E.parseAlg(wca)) !== n) return false;
-    if (!E.eq(E.applyParsed(E.parseAlg(wca), E.solved(), SYMS, ROTBY), s)) return false;
+    if (!E.eq(stOf(wca), s)) return false;
   }
   return true;
 });
 
 // ---------------- NS notation (parseAlg(str,'ns'), converters, mirror) ----------------
-const stOf = (a, nota) => E.applyParsed(E.parseAlg(a, nota), E.solved(), SYMS, ROTBY);
 function rndNsAlg(n, rots) {
   const letters = ['F','R','B','L','f','r','b','l'], out = [];
   for (let i = 0; i < n; i++) {
@@ -476,7 +460,7 @@ t('optimalScramble: inverse of an optimal solution; re-solves to solved', () => 
     const s = rndState();
     const scr = E.optimalScramble(s, dist, true);
     if (scr === null) return false;
-    if (!E.eq(E.applyParsed(E.parseAlg(scr), E.solved(), SYMS, ROTBY), s)) return false;
+    if (!E.eq(stOf(scr), s)) return false;
   }
   return true;
 });
@@ -510,6 +494,4 @@ t('makeHold24Canon/makeFull48Canon: invariant under rotations, ι and (48) mirro
   return true;
 });
 
-console.log('');
-console.log(passed + ' passed, ' + failed + ' failed');
-process.exitCode = failed ? 1 : 0;
+finish();

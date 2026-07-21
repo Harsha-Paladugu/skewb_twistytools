@@ -8,16 +8,10 @@
  *
  * Run: node tools/check-sheet.mjs   (exit 0 = OK, 1 = problems)
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
+import { loadEngine, loadSheet, loadBrokenAllowlist, brokenKey } from './lib/load-engine.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
-const { SHEET } = require(path.join(ROOT, 'js', 'sheet.js'));
+const E = loadEngine();
+const SHEET = loadSheet();
 // keying + alg→case helpers come from the engine (single source of truth); this
 // verifier checks the shipped js/sheet.js data against them. NOTE: it therefore
 // shares any engine-level keying bug — it is independent of the COMPILER only.
@@ -25,8 +19,7 @@ const { keyToState, realCanonKey, algSolvesKey } = E;
 // Explicit allowlist of known-broken algs (parse fine but don't solve their
 // render key), kept only to avoid empty panels. The shipped SHEET.ALG may
 // contain exactly these and no other non-solving algs.
-const BROKEN = require(path.join(ROOT, 'data', 'broken-algs.json'));
-const BROKEN_KEYS = new Set(BROKEN.map(b => b.renderKey + ' :: ' + b.algorithm));
+const BROKEN_KEYS = loadBrokenAllowlist().keys;
 
 const SOLVED_KEY = E.stateKey(E.solved());
 let tot = 0, noname = 0, badcanon = 0, solvedCase = 0; const samples = [], nosolveKeys = [];
@@ -35,7 +28,7 @@ for (const [rk, algs] of Object.entries(SHEET.ALG)) {
   if (rk === SOLVED_KEY) solvedCase++; // a "case" at the solved state is always bogus
   for (const [alg] of algs) {
     tot++;
-    if (!algSolvesKey(alg, rk)) { nosolveKeys.push(rk + ' :: ' + alg); if (samples.length < 8) samples.push(rk + ' :: ' + alg); }
+    if (!algSolvesKey(alg, rk)) { const k = brokenKey(rk, alg); nosolveKeys.push(k); if (samples.length < 8) samples.push(k); }
   }
   if (!SHEET.CNAME[realCanonKey(keyToState(rk))]) badcanon++;
 }

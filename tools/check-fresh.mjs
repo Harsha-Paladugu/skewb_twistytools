@@ -22,11 +22,12 @@ const GENERATED = ['js/sheet.js', 'js/trainer.js', 'data/classmap.json',
 
 const snapshot = new Map(GENERATED.map(rel => [rel, fs.readFileSync(path.join(ROOT, rel))]));
 
-console.log('Rebuilding (compile-sheet -> bundle trainer -> stamp)…');
+console.log('Rebuilding (npm run build:trainer -> npm run stamp)…');
 try {
-  execSync('node tools/compile-sheet.mjs', { cwd: ROOT, stdio: 'inherit' });
-  execSync('node build.mjs', { cwd: ROOT, stdio: 'inherit' });
-  execSync('node tools/stamp-assets.mjs', { cwd: ROOT, stdio: 'inherit' });
+  // invoke the npm scripts, not raw node commands, so the pipeline definition
+  // lives only in package.json
+  execSync('npm run build:trainer', { cwd: ROOT, stdio: 'inherit' });
+  execSync('npm run stamp', { cwd: ROOT, stdio: 'inherit' });
 } catch (e) {
   console.error('\n*** BUILD FAILED — cannot assess freshness ***');
   for (const [rel, buf] of snapshot) fs.writeFileSync(path.join(ROOT, rel), buf);

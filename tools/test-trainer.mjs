@@ -8,36 +8,20 @@
  * Run: node tools/test-trainer.mjs   (exit 0 = OK, 1 = a test failed)
  * Heavier than test-engine: builds TWO full-space BFS tables (dist + FL-dist).
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import { buildDist } from './lib/bfs-dist.mjs';
+import { loadEngine, loadSolverCore, loadAlgData } from './lib/load-engine.mjs';
+import { t, finish, rndInt } from './lib/harness.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
+const E = loadEngine();
 
 const { createCore, DIRS, Y_PREFIX, SOL_EXAMPLES } = await import('../src/trainer/skewb-core.mjs');
 const core = createCore(E);
 
-let passed = 0, failed = 0;
-function t(name, fn) {
-  try {
-    const r = fn();
-    if (r === false) throw new Error('assertion returned false');
-    console.log('✓ ' + name); passed++;
-  } catch (e) {
-    console.log('✗ ' + name + '\n    ' + (e && e.message)); failed++;
-  }
-}
-const rndInt = (n) => Math.floor(Math.random() * n);
-const applyWca = (alg, st) => E.applyParsed(E.parseAlg(E.preprocessAlg(alg)), st, null, E.makeFrames());
+const ROTBY = E.makeFrames(null);
+const applyWca = (alg, st) => E.applyParsed(E.parseAlg(E.preprocessAlg(alg)), st, null, ROTBY);
 
 // ---------------- case model ----------------
-const JSON_DATA = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'skewb_algs.json'), 'utf8'));
+const JSON_DATA = loadAlgData();
 const model = core.buildModel(JSON_DATA);
 
 t('model: empty subsets skipped, imported three present', () => {
@@ -205,11 +189,10 @@ t('one-look: randomAtFLDist lands on the exact FL distance for every n 0..6', ()
 // 2026-07-13: the old engine-frame preimage made the solution "U" need a
 // physical L with the layer landing off-bottom whenever the draw carried a
 // UFL walk digit — these tests fail against that construction.
-require(path.join(ROOT, 'js', 'solver-core.js'));
-const SC = globalThis.window.OOSolverCore.makeSolverCore(E, dist, JSON_DATA);
+const SC = loadSolverCore().makeSolverCore(E, dist, JSON_DATA);
 const parseWca = (s) => E.parseAlg(E.preprocessAlg(s));
 const parseNs = (s) => E.parseAlg(E.preprocessAlg(s), 'ns');
-const flKey = (fl) => fl.join('');
+const flKey = SC.flKey; // the oracle's own facelet key — one definition
 
 t('one-look: randomDLayerState samples reachable D-solved states, UFL pristine', () => {
   const ufl = E.AXIS.indexOf('UFL');
@@ -440,5 +423,4 @@ t('quiz answers: TCLL labels are context-dependent — authored verbatim', () =>
   return subTC.cases.every((c) => core.quizAnswer(subTC, c) === c.center);
 });
 
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+finish();

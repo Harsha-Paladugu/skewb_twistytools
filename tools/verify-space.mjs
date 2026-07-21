@@ -31,16 +31,10 @@
  *
  * Run: node tools/verify-space.mjs   (npm run test:space; ~3-6 min)
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import { buildDist } from './lib/bfs-dist.mjs';
+import { loadEngine } from './lib/load-engine.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
+const E = loadEngine();
 
 let failed = 0;
 const check = (name, got, want) => {

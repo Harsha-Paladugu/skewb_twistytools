@@ -13,20 +13,12 @@
  *   node tools/solver-lab.mjs --caps fl=6,tcll=5
  *   node tools/solver-lab.mjs --scan 200           # tally stats over random scrambles
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
-import { readFileSync } from 'fs';
 import { buildDist } from './lib/bfs-dist.mjs';
+import { loadEngine, loadSolverCore, loadAlgData } from './lib/load-engine.mjs';
 
-const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
-require(path.join(ROOT, 'js', 'solver-core.js'));
-const { makeSolverCore, METHOD_DEFS } = globalThis.window.OOSolverCore;
-const algData = JSON.parse(readFileSync(path.join(ROOT, 'data', 'skewb_algs.json'), 'utf8'));
+const E = loadEngine();
+const { makeSolverCore, METHOD_DEFS } = loadSolverCore();
+const algData = loadAlgData();
 
 /* ---- tables + core (same inputs as solver.html) ---- */
 const dist = buildDist(E);

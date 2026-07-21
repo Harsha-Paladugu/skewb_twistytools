@@ -20,16 +20,9 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
+import { loadEngine, loadAlgData, loadBrokenAllowlist, brokenKey, ROOT } from './lib/load-engine.mjs';
 
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
-
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
+const E = loadEngine();
 // Carry-forward baseline. Read from a COMMITTED snapshot (data/prior-sheet.json),
 // not the compiler's own output (js/sheet.js), so the build is reproducible from
 // version-controlled inputs alone. The Skewb sheet starts with an empty baseline
@@ -37,14 +30,14 @@ const E = globalThis.window.OOEngine;
 // prior-sheet.json with a freshly built sheet if the JSON ever stops reproducing
 // shipped cases you want kept.
 const OLD = Object.assign({ ALG: {}, NAME: {}, CNAME: {}, PRES: {} },
-  require(path.join(ROOT, 'data', 'prior-sheet.json')));
-const J = require(path.join(ROOT, 'data', 'skewb_algs.json'));
+  JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'prior-sheet.json'), 'utf8')));
+const J = loadAlgData();
 // Explicit allowlist of known-broken algs (parse fine but don't solve their
 // render key) carried forward only to avoid empty panels. Named manifest, not a
 // count: a NEW broken alg that isn't listed here fails the build. Keys are
-// `renderKey :: alg` on the SHIPPED (post-normAlg) notation; see check-sheet.mjs.
-const BROKEN = require(path.join(ROOT, 'data', 'broken-algs.json'));
-const BROKEN_KEYS = new Set(BROKEN.map(b => b.renderKey + ' :: ' + b.algorithm));
+// brokenKey(renderKey, alg) on the SHIPPED (post-normAlg) notation — the same
+// key check-sheet.mjs verifies against.
+const BROKEN_KEYS = loadBrokenAllowlist().keys;
 
 // keying + alg→case helpers are the engine's single source of truth.
 const { stateKey, realCanonKey, caseStateOf, algSolvesKey } = E;
@@ -166,7 +159,7 @@ for (const [canon, rec] of Object.entries(byKey)) {
 // fails is just a stale-manifest note.
 const failingBroken = [];
 for (const [rk, algs] of Object.entries(MAIN.ALG))
-  for (const [alg] of algs) if (!algSolvesKey(alg, rk)) failingBroken.push(rk + ' :: ' + alg);
+  for (const [alg] of algs) if (!algSolvesKey(alg, rk)) failingBroken.push(brokenKey(rk, alg));
 const unexpectedBroken = failingBroken.filter(k => !BROKEN_KEYS.has(k));
 const staleBroken = [...BROKEN_KEYS].filter(k => !failingBroken.includes(k));
 const selfCheckOk = unexpectedBroken.length === 0;

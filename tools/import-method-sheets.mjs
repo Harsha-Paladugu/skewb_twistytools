@@ -51,16 +51,9 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
+import { loadEngine, ROOT } from './lib/load-engine.mjs';
 
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
-
-globalThis.window = {};
-require(path.join(ROOT, 'js', 'engine.js'));
-const E = globalThis.window.OOEngine;
+const E = loadEngine();
 const syms = E.buildSyms();
 const rotBy = E.makeFrames(syms);
 
@@ -278,7 +271,10 @@ function buildSubset(fileKey) {
            stats: { casesIn: src.cases.length, casesOut: cases.length, merged, algsIn, algsOut, suspects } };
 }
 
-const built = ['ns', 'eg2', 'tcll'].map(buildSubset);
+// the three imported subsets, in their canonical site tab order — this list is
+// also the re-insertion order below (single declaration)
+const IMPORT_ORDER = ['ns', 'eg2', 'tcll'];
+const built = IMPORT_ORDER.map(buildSubset);
 
 // ---- assemble the new subsets object --------------------------------------
 // Keep every non-imported subset as-is; EMPTY the machine-generated
@@ -291,7 +287,7 @@ for (const [k, v] of Object.entries(J.subsets)) {
   if (IMPORTED.has(k)) continue; // re-inserted below in canonical order
   subsets[k] = (k === 'Sarah-Intermediate') ? Object.assign({}, v, { cases: [] }) : v;
 }
-for (const key of ['NS', 'EG2', 'TCLL']) subsets[key] = built.find(b => b.ad.key === key).subset;
+for (const b of built) subsets[b.ad.key] = b.subset;
 
 // ---- meta ------------------------------------------------------------------
 let cases = 0, algs = 0;
