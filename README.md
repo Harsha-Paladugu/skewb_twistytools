@@ -93,6 +93,7 @@ npm run test:solver  # solver-core physical-model + finish-index tests
 npm run test:trainer # trainer substrate tests (builds two full BFS tables — slow-ish)
 npm run test:space   # full state-space enumeration/census-count verification (slow)
 npm run test:rules   # Firestore rules tests (opt-in: needs the emulator + dev deps)
+npm run test:all     # check:fresh + every non-emulator runner (what CI runs)
 npm run watch:trainer    # esbuild watch (note: does NOT recompile the sheet)
 ```
 
@@ -164,6 +165,13 @@ Two kinds of subsets live in `data/skewb_algs.json`:
   sheet-notation caveats.
 - [src/trainer/README.md](src/trainer/README.md) — trainer source, workflow,
   and integration contract.
+
+## License
+
+Code and original content are [MIT](LICENSE). The transcribed community method
+sheets in `data/sources/` (and the subsets generated from them) remain the work
+of their credited authors — see the provenance note in the LICENSE file and
+[data/sources/README.md](data/sources/README.md).
 
 ### Module strategy (why no `"type": "module"`)
 

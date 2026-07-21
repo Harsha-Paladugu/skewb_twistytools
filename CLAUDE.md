@@ -22,6 +22,7 @@ npm run test:solver   # solver-core physical-model + finish-index tests (tools/t
 npm run test:trainer  # trainer substrate tests (tools/test-trainer.mjs) — builds TWO full BFS tables, slow-ish
 npm run test:space    # full state-space enumeration + census-count pins (tools/verify-space.mjs) — slow
 npm run test:rules    # Firestore rules emulator tests (opt-in: needs the emulator + dev deps)
+npm run test:all      # check:fresh + every non-emulator runner, fastest-fail first (what CI runs)
 
 node tools/compile-sheet.mjs --check   # dry-run compile + report; never writes js/sheet.js
 ```

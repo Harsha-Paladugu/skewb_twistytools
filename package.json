@@ -2,6 +2,7 @@
   "name": "skewbiks",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "description": "Skewbiks.com — static site (OO census, solver, Skewb trainer, algorithm reference) plus its build. Sources compile to js/sheet.js and js/trainer.js.",
   "scripts": {
     "build:sheet": "node tools/compile-sheet.mjs",
@@ -16,7 +17,8 @@
     "test:trainer": "node tools/test-trainer.mjs",
     "test:solver": "node tools/test-solver.mjs",
     "test:space": "node tools/verify-space.mjs",
-    "test:rules": "node test/firestore.rules.test.mjs"
+    "test:rules": "node test/firestore.rules.test.mjs",
+    "test:all": "npm run check:fresh && npm run test:engine && npm run test:solver && npm run test:space && npm run test:trainer"
   },
   "dependencies": {
     "react": "^18.3.1",
