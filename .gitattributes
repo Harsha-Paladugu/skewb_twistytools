@@ -1,0 +1,7 @@
+# Force LF on checkout regardless of the cloner's core.autocrlf. The ?v=
+# cache-busting stamps are content hashes of raw file bytes
+# (tools/stamp-assets.mjs), so a CRLF checkout would churn every stamp and make
+# `npm run check:fresh` fail on an untouched clone. Matches .editorconfig
+# (end_of_line = lf).
+* text=auto eol=lf
+*.png -text
