@@ -1099,162 +1099,11 @@ export default function SkewbTrainer() {
 
         {/* ---------- stats + session ---------- */}
         <div className="panelrow">
-          <div className="card">
-            {mode === "recog" && recogView === "centers" ? (
-              <>
-                <h3>Center cases · {centerSel.length === 3 ? centerSel.slice().sort().join(" ") : "pick 3 centers"}{cornersOn ? " + 2 corners" : ""}</h3>
-                {(() => {
-                  const rows = quizOptions.map((a) => [a, centersStats[a]]).filter(([, s]) => s);
-                  if (!rows.length) return <div className="empty">Answer which center case the visible centers imply (or Don’t know) — accuracy lands here per center case.</div>;
-                  return (
-                    <table>
-                      <thead><tr><th>Center case</th><th>Seen</th><th>Correct</th><th>Don’t know</th><th>Accuracy</th></tr></thead>
-                      <tbody>
-                        {rows.map(([a, s]) => (
-                          <tr key={a}>
-                            <td className="name">{a}</td>
-                            <td className="mono">{s.n}</td>
-                            <td className="mono">{s.hit}</td>
-                            <td className="mono">{s.dk || 0}</td>
-                            <td className="mono">{pct(s.hit, s.n)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  );
-                })()}
-              </>
-            ) : mode === "onelook" ? (
-              <>
-                <h3>One-look</h3>
-                {(() => {
-                  const rows = Object.entries(onelookStats);
-                  if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 got it · 2 missed) — accuracy lands here per layer setting.</div>;
-                  const rank = (k) => {
-                    const { sub, rest } = parseOnelookKey(k);
-                    return sub === "len" ? [0, +rest, ""] : [1, 0, rest];
-                  };
-                  rows.sort(([a], [b]) => {
-                    const ra = rank(a), rb = rank(b);
-                    return (ra[0] - rb[0]) || (ra[1] - rb[1]) || (ra[2] < rb[2] ? -1 : ra[2] > rb[2] ? 1 : 0);
-                  });
-                  return (
-                    <table>
-                      <thead><tr><th>Layer</th><th>Tries</th><th>Got it</th><th>Accuracy</th><th>Mean look</th></tr></thead>
-                      <tbody>
-                        {rows.map(([k, s]) => (
-                          <tr key={k}>
-                            <td className="name">{parseOnelookKey(k).sub === "sol"
-                              ? <><AlgText text={s.label} />{s.nota ? <span className="casesub" style={{ marginLeft: 6 }}>{s.nota.toUpperCase()}</span> : null}</>
-                              : s.label}</td>
-                            <td className="mono">{s.n}</td>
-                            <td className="mono">{s.hit}</td>
-                            <td className="mono">{pct(s.hit, s.n)}</td>
-                            <td className="mono">{mean(s.sum, s.n)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  );
-                })()}
-              </>
-            ) : mode === "recog" ? (
-              <>
-                <h3>Recognition</h3>
-                {(() => {
-                  const rows = Object.entries(recogStats);
-                  if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 recognized · 2 missed) — accuracy lands here per case.</div>;
-                  const tot = rows.reduce((a, [, s]) => ({ n: a.n + s.n, hit: a.hit + s.hit, sum: a.sum + s.sum }), { n: 0, hit: 0, sum: 0 });
-                  const missed = rows.filter(([, s]) => s.hit < s.n)
-                    .sort((a, b) => (b[1].n - b[1].hit) - (a[1].n - a[1].hit));
-                  return (
-                    <>
-                      <table>
-                        <thead><tr><th>Graded</th><th>Recognized</th><th>Accuracy</th><th>Mean reveal</th></tr></thead>
-                        <tbody>
-                          <tr>
-                            <td className="mono">{tot.n}</td>
-                            <td className="mono">{tot.hit}</td>
-                            <td className="mono">{pct(tot.hit, tot.n)}</td>
-                            <td className="mono">{mean(tot.sum, tot.n)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      {missed.length > 0 && (
-                        <div className="casegrid">
-                          {missed.slice(0, 24).map(([uid, s]) => {
-                            const c = uidIndex.get(uid);
-                            return (
-                              <div key={uid} className="casecard">
-                                {c ? <CaseNet state={core.stateForDir(c, 0)} w={120} /> : null}
-                                <div className="casenums">
-                                  <span className="mono" style={{ color: "var(--red)" }}>{s.n - s.hit}✗</span>
-                                  <span className="casesub">{s.name}</span>
-                                  <span className="casesub">{s.hit}/{s.n} · {fmt(s.sum / s.n)}s</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </>
-            ) : (
-              <>
-                <h3>Drill stats</h3>
-                {Object.keys(variantAgg).length === 0 ? (
-                  <div className="empty">No solves yet. Times land here, grouped by subset.</div>
-                ) : (
-                  <table>
-                    <thead><tr><th>Subset</th><th>Solves</th><th>Cases seen</th><th>Best</th><th>Mean</th></tr></thead>
-                    <tbody>
-                      {Object.keys(variantAgg).sort().map((vk) => {
-                        const a = variantAgg[vk];
-                        return (
-                          <tr key={vk} className="setrow" onClick={() => setExpandedVariant(expandedVariant === vk ? null : vk)}>
-                            <td className="name">
-                              <span className="dot" style={{ background: subColor(a.subset) }} />
-                              {a.subset}{a.d ? " · " + DIRS[a.d] : ""}
-                              <span className="chev">{expandedVariant === vk ? "▾" : "▸"}</span>
-                            </td>
-                            <td className="mono">{a.n}</td>
-                            <td className="mono">{a.cases}</td>
-                            <td className="mono">{fmt(a.best)}</td>
-                            <td className="mono">{fmt(a.sum / a.n)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-                {expandedVariant && variantAgg[expandedVariant] && (
-                  <div className="casegrid">
-                    {variantAgg[expandedVariant].keys
-                      .map((k) => [k, caseStats[k]])
-                      .sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)
-                      .map(([k, st]) => {
-                        const uid = k.slice(0, k.lastIndexOf(SEP));
-                        const c = uidIndex.get(uid);
-                        return (
-                          <div key={k} className="casecard">
-                            {/* anchor view like recognition's grid — legacy d = 1/3 rows
-                                aren't all D-anchored raw (the variant heading keeps its d tag) */}
-                            {c ? <CaseNet state={core.stateForDir(c, 0)} w={120} /> : null}
-                            <div className="casenums">
-                              <span className="mono">{fmt(st.sum / st.n)}</span>
-                              <span className="casesub">{st.name}</span>
-                              <span className="casesub">best {fmt(st.best)} · {st.n}×</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          <StatsPanel mode={mode} recogView={recogView} centerSel={centerSel} cornersOn={cornersOn}
+            quizOptions={quizOptions} centersStats={centersStats} onelookStats={onelookStats}
+            recogStats={recogStats} variantAgg={variantAgg} expandedVariant={expandedVariant}
+            setExpandedVariant={setExpandedVariant} caseStats={caseStats} uidIndex={uidIndex}
+            subColor={subColor} />
           <div className="card">
             <h3>Session</h3>
             {sessionShown.length === 0 ? (
@@ -1323,6 +1172,176 @@ function GradeRow({ hitLabel, missLabel, onGrade, onSkip }) {
       <button className="gradebtn hit" onClick={() => onGrade(true)}>{hitLabel} ✓ (1)</button>
       <button className="gradebtn miss" onClick={() => onGrade(false)}>{missLabel} ✗ (2)</button>
       <button className="preset" onClick={onSkip}>skip (space)</button>
+    </div>
+  );
+}
+
+
+// one stats-grid thumbnail: the case at its anchor view + the stat lines
+function CaseCard({ c, children }) {
+  return (
+    <div className="casecard">
+      {c ? <CaseNet state={core.stateForDir(c, 0)} w={120} /> : null}
+      <div className="casenums">{children}</div>
+    </div>
+  );
+}
+
+// the per-mode stats card (the left panel): center-case accuracy, one-look
+// accuracy, recognition accuracy + missed grid, or drill times + per-case grid
+function StatsPanel({ mode, recogView, centerSel, cornersOn, quizOptions, centersStats,
+                      onelookStats, recogStats, variantAgg, expandedVariant,
+                      setExpandedVariant, caseStats, uidIndex, subColor }) {
+  return (
+    <div className="card">
+      {mode === "recog" && recogView === "centers" ? (
+        <>
+          <h3>Center cases · {centerSel.length === 3 ? centerSel.slice().sort().join(" ") : "pick 3 centers"}{cornersOn ? " + 2 corners" : ""}</h3>
+          {(() => {
+            const rows = quizOptions.map((a) => [a, centersStats[a]]).filter(([, s]) => s);
+            if (!rows.length) return <div className="empty">Answer which center case the visible centers imply (or Don’t know) — accuracy lands here per center case.</div>;
+            return (
+              <table>
+                <thead><tr><th>Center case</th><th>Seen</th><th>Correct</th><th>Don’t know</th><th>Accuracy</th></tr></thead>
+                <tbody>
+                  {rows.map(([a, s]) => (
+                    <tr key={a}>
+                      <td className="name">{a}</td>
+                      <td className="mono">{s.n}</td>
+                      <td className="mono">{s.hit}</td>
+                      <td className="mono">{s.dk || 0}</td>
+                      <td className="mono">{pct(s.hit, s.n)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
+        </>
+      ) : mode === "onelook" ? (
+        <>
+          <h3>One-look</h3>
+          {(() => {
+            const rows = Object.entries(onelookStats);
+            if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 got it · 2 missed) — accuracy lands here per layer setting.</div>;
+            const rank = (k) => {
+              const { sub, rest } = parseOnelookKey(k);
+              return sub === "len" ? [0, +rest, ""] : [1, 0, rest];
+            };
+            rows.sort(([a], [b]) => {
+              const ra = rank(a), rb = rank(b);
+              return (ra[0] - rb[0]) || (ra[1] - rb[1]) || (ra[2] < rb[2] ? -1 : ra[2] > rb[2] ? 1 : 0);
+            });
+            return (
+              <table>
+                <thead><tr><th>Layer</th><th>Tries</th><th>Got it</th><th>Accuracy</th><th>Mean look</th></tr></thead>
+                <tbody>
+                  {rows.map(([k, s]) => (
+                    <tr key={k}>
+                      <td className="name">{parseOnelookKey(k).sub === "sol"
+                        ? <><AlgText text={s.label} />{s.nota ? <span className="casesub" style={{ marginLeft: 6 }}>{s.nota.toUpperCase()}</span> : null}</>
+                        : s.label}</td>
+                      <td className="mono">{s.n}</td>
+                      <td className="mono">{s.hit}</td>
+                      <td className="mono">{pct(s.hit, s.n)}</td>
+                      <td className="mono">{mean(s.sum, s.n)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
+        </>
+      ) : mode === "recog" ? (
+        <>
+          <h3>Recognition</h3>
+          {(() => {
+            const rows = Object.entries(recogStats);
+            if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 recognized · 2 missed) — accuracy lands here per case.</div>;
+            const tot = rows.reduce((a, [, s]) => ({ n: a.n + s.n, hit: a.hit + s.hit, sum: a.sum + s.sum }), { n: 0, hit: 0, sum: 0 });
+            const missed = rows.filter(([, s]) => s.hit < s.n)
+              .sort((a, b) => (b[1].n - b[1].hit) - (a[1].n - a[1].hit));
+            return (
+              <>
+                <table>
+                  <thead><tr><th>Graded</th><th>Recognized</th><th>Accuracy</th><th>Mean reveal</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td className="mono">{tot.n}</td>
+                      <td className="mono">{tot.hit}</td>
+                      <td className="mono">{pct(tot.hit, tot.n)}</td>
+                      <td className="mono">{mean(tot.sum, tot.n)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                {missed.length > 0 && (
+                  <div className="casegrid">
+                    {missed.slice(0, 24).map(([uid, s]) => {
+                      const c = uidIndex.get(uid);
+                      return (
+                        <CaseCard key={uid} c={c}>
+                          <span className="mono" style={{ color: "var(--red)" }}>{s.n - s.hit}✗</span>
+                          <span className="casesub">{s.name}</span>
+                          <span className="casesub">{s.hit}/{s.n} · {fmt(s.sum / s.n)}s</span>
+                        </CaseCard>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </>
+      ) : (
+        <>
+          <h3>Drill stats</h3>
+          {Object.keys(variantAgg).length === 0 ? (
+            <div className="empty">No solves yet. Times land here, grouped by subset.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Subset</th><th>Solves</th><th>Cases seen</th><th>Best</th><th>Mean</th></tr></thead>
+              <tbody>
+                {Object.keys(variantAgg).sort().map((vk) => {
+                  const a = variantAgg[vk];
+                  return (
+                    <tr key={vk} className="setrow" onClick={() => setExpandedVariant(expandedVariant === vk ? null : vk)}>
+                      <td className="name">
+                        <span className="dot" style={{ background: subColor(a.subset) }} />
+                        {a.subset}{a.d ? " · " + DIRS[a.d] : ""}
+                        <span className="chev">{expandedVariant === vk ? "▾" : "▸"}</span>
+                      </td>
+                      <td className="mono">{a.n}</td>
+                      <td className="mono">{a.cases}</td>
+                      <td className="mono">{fmt(a.best)}</td>
+                      <td className="mono">{fmt(a.sum / a.n)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          {expandedVariant && variantAgg[expandedVariant] && (
+            <div className="casegrid">
+              {variantAgg[expandedVariant].keys
+                .map((k) => [k, caseStats[k]])
+                .sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)
+                .map(([k, st]) => {
+                  const uid = k.slice(0, k.lastIndexOf(SEP));
+                  const c = uidIndex.get(uid);
+                  return (
+                    /* anchor view like recognition's grid — legacy d = 1/3 rows
+                       aren't all D-anchored raw (the variant heading keeps its d tag) */
+                    <CaseCard key={k} c={c}>
+                      <span className="mono">{fmt(st.sum / st.n)}</span>
+                      <span className="casesub">{st.name}</span>
+                      <span className="casesub">best {fmt(st.best)} · {st.n}×</span>
+                    </CaseCard>
+                  );
+                })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
