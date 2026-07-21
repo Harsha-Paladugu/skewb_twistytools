@@ -305,30 +305,13 @@ export function createCore(E) {
   }
 
   // multi-source BFS: distance from every reachable state to the nearest
-  // any-layer-solved state. Same shape as OOTables.loadOrBuildDist's BFS.
+  // any-layer-solved state. The frontier loop is OOTables.bfsFrom — seeded
+  // here with every layer-solved state (trainer.html loads js/tables.js
+  // before the bundle; Node tests load it under the window shim).
   async function buildFLDist(report, tick) {
-    const g = new Int8Array(NSLOTS).fill(-1);
-    let frontier = Uint32Array.from(flSeedIndices());
-    for (const ix of frontier) g[ix] = 0;
-    let d = 0, seen = frontier.length;
-    const REACHABLE = 3149280;
-    while (frontier.length) {
-      const next = [];
-      for (let fi = 0; fi < frontier.length; fi++) {
-        const s = E.unidx(frontier[fi]);
-        for (let mi = 0; mi < NMOVES; mi++) {
-          const t = E.copy(s); E.applyMoveIdx(t, mi);
-          const ix = E.idx(t);
-          if (g[ix] === -1) { g[ix] = d + 1; next.push(ix); }
-        }
-        if ((fi & 8191) === 8191) { if (report) report('bfs', seen + next.length, REACHABLE); if (tick) await tick(); }
-      }
-      d++; seen += next.length;
-      frontier = Uint32Array.from(next);
-      if (report) report('bfs', seen, REACHABLE);
-      if (tick) await tick();
-    }
-    return g;
+    const T = (typeof window !== "undefined" && window.OOTables) || null;
+    if (!T) throw new Error("js/tables.js must load before buildFLDist");
+    return T.bfsFrom(E, flSeedIndices(), report, tick);
   }
 
   // ---------- one-look ----------

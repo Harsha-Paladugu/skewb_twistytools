@@ -9,10 +9,11 @@
  * Heavier than test-engine: builds TWO full-space BFS tables (dist + FL-dist).
  */
 import { buildDist } from './lib/bfs-dist.mjs';
-import { loadEngine, loadSolverCore, loadAlgData } from './lib/load-engine.mjs';
+import { loadEngine, loadSolverCore, loadTables, loadAlgData } from './lib/load-engine.mjs';
 import { t, finish, rndInt } from './lib/harness.mjs';
 
 const E = loadEngine();
+loadTables();   // core.buildFLDist runs on OOTables.bfsFrom (no IndexedDB touched)
 
 const { createCore, DIRS, Y_PREFIX, SOL_EXAMPLES } = await import('../src/trainer/skewb-core.mjs');
 const core = createCore(E);
