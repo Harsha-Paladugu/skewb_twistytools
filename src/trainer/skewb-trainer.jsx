@@ -68,6 +68,16 @@ function CaseNet({ state, w, mask }) {
 }
 
 // alg text as evenly-spaced tokens, rotations tinted (algs-page convention)
+// immutable Set toggle — the add/remove idiom every membership toggle shares
+const toggledSet = (s, k) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; };
+// stats formatting: percentage + mean time (fmt is the shared seconds format)
+const pct = (hit, n) => Math.round((hit / n) * 100) + "%";
+const mean = (sum, n) => fmt(sum / n);
+// the one-look stats key: built by gradeOnelook, parsed by the stats table —
+// ONE pair of functions so the format can never drift between them
+const onelookKey = (last) => last.sub === "len" ? "len" + SEP + last.n : "sol" + SEP + last.sol.nota + SEP + last.sol.raw;
+const parseOnelookKey = (k) => { const i = k.indexOf(SEP); return { sub: k.slice(0, i), rest: k.slice(i + 1) }; };
+
 function AlgText({ text }) {
   return (
     <span className="mono alg">
@@ -486,7 +496,7 @@ export default function SkewbTrainer() {
   const gradeOnelook = useCallback((hit) => {
     if (phase !== "stopped" || !last || last.kind !== "onelook") return;
     // sol keys carry the notation: the same letters mean different moves in WCA vs NS
-    const key = last.sub === "len" ? "len" + SEP + last.n : "sol" + SEP + last.sol.nota + SEP + last.sol.raw;
+    const key = onelookKey(last);
     const label = last.sub === "len" ? last.n + " move" + (last.n === 1 ? "" : "s") : last.sol.raw;
     setOnelookStats((os) => {
       const prev = os[key] || { n: 0, hit: 0, sum: 0 };
@@ -628,8 +638,7 @@ export default function SkewbTrainer() {
       }
       if (phase === "stopped" && e.code === "KeyK" && last && last.kind === "drill") {
         e.preventDefault();
-        const k = knownKey(last.c.uid, last.d);
-        setCaseKnown((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+        setCaseKnown((s) => toggledSet(s, knownKey(last.c.uid, last.d)));
         return;
       }
       if (phase === "running") { e.preventDefault(); stopTimer(); return; }
@@ -669,8 +678,7 @@ export default function SkewbTrainer() {
     const cur = groupsOf(sub);
     setGroupSel((s) => ({ ...s, [sub.key]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] }));
   };
-  const toggleCase = (uid) =>
-    setCaseOff((s) => { const n = new Set(s); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
+  const toggleCase = (uid) => setCaseOff((s) => toggledSet(s, uid));
   const toggleKnown = (uid) =>
     setCaseKnown((s) => {
       const n = new Set(s);
@@ -729,6 +737,7 @@ export default function SkewbTrainer() {
   // one of its own chip clicks touched parent state.)
 
   // ---------- render ----------
+  const isAlgoMode = mode === "drill" || mode === "recap";   // the Algorithm tab's two sub-modes
   const recapDone = mode === "recap" && recap && recap.idx >= recap.queue.length;
   const m = model();
 
@@ -756,8 +765,8 @@ export default function SkewbTrainer() {
         )}
 
         <div className="modes modetabs">
-          <button className={"mode" + (mode === "drill" || mode === "recap" ? " on" : "")}
-            onClick={() => { if (mode !== "drill" && mode !== "recap") setMode(lastAlgoMode.current); }}>Algorithm</button>
+          <button className={"mode" + (isAlgoMode ? " on" : "")}
+            onClick={() => { if (!isAlgoMode) setMode(lastAlgoMode.current); }}>Algorithm</button>
           <button className={"mode" + (mode === "recog" ? " on" : "")} onClick={() => setMode("recog")}>Recognition</button>
           <button className={"mode" + (mode === "onelook" ? " on" : "")} onClick={() => setMode("onelook")}>One-look</button>
         </div>
@@ -767,19 +776,11 @@ export default function SkewbTrainer() {
           <>
             <div className="chips" style={{ alignItems: "center" }}>
               <span className="grouplabel">layer</span>
-              <div className="modes">
-                {[["len", "Random"], ["sol", "My solutions"]].map(([v, l]) => (
-                  <button key={v} className={"mode" + (onelookView === v ? " on" : "")} onClick={() => setOnelookView(v)}>{l}</button>
-                ))}
-              </div>
+              <Segmented options={[["len", "Random"], ["sol", "My solutions"]]} value={onelookView} onChange={setOnelookView} />
               {onelookView === "len" ? (
                 <>
                   <span className="grouplabel">moves to a layer</span>
-                  <div className="modes">
-                    {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                      <button key={n} className={"mode" + (onelookLen === n ? " on" : "")} onClick={() => setOnelookLen(n)}>{n}</button>
-                    ))}
-                  </div>
+                  <Segmented options={[0, 1, 2, 3, 4, 5, 6].map((n) => [n, n])} value={onelookLen} onChange={setOnelookLen} />
                 </>
               ) : (
                 <>
@@ -822,16 +823,12 @@ export default function SkewbTrainer() {
         )}
 
         {/* ---------- setup (Algorithm + Recognition share the pool) ---------- */}
-        {(mode === "drill" || mode === "recap" || mode === "recog") && (
+        {(isAlgoMode || mode === "recog") && (
           <>
             {mode === "recog" && (
               <div className="chips" style={{ alignItems: "center" }}>
                 <span className="grouplabel">view</span>
-                <div className="modes">
-                  {[["full", "Full"], ["centers", "Center cases"]].map(([v, l]) => (
-                    <button key={v} className={"mode" + (recogView === v ? " on" : "")} onClick={() => setRecogView(v)}>{l}</button>
-                  ))}
-                </div>
+                <Segmented options={[["full", "Full"], ["centers", "Center cases"]]} value={recogView} onChange={setRecogView} />
                 {recogView === "centers" && (
                   <>
                     <span className="grouplabel">centers</span>
@@ -854,19 +851,11 @@ export default function SkewbTrainer() {
               </div>
             )}
             <div className="chips" style={{ alignItems: "center" }}>
-              {(mode === "drill" || mode === "recap") && (
-                <div className="modes">
-                  {[["drill", "Drill"], ["recap", "Recap"]].map(([v, l]) => (
-                    <button key={v} className={"mode" + (mode === v ? " on" : "")} onClick={() => setMode(v)}>{l}</button>
-                  ))}
-                </div>
+              {isAlgoMode && (
+                <Segmented options={[["drill", "Drill"], ["recap", "Recap"]]} value={mode} onChange={setMode} />
               )}
               <span className="grouplabel">practice</span>
-              <div className="modes">
-                {[["all", "All"], ["learning", "Learning"], ["known", "Known"]].map(([v, l]) => (
-                  <button key={v} className={"mode" + (scope === v ? " on" : "")} onClick={() => setScope(v)}>{l}</button>
-                ))}
-              </div>
+              <Segmented options={[["all", "All"], ["learning", "Learning"], ["known", "Known"]]} value={scope} onChange={setScope} />
             </div>
 
             <div className="card setupcard">
@@ -977,15 +966,9 @@ export default function SkewbTrainer() {
                     : last.dk ? "It was " + last.answerKey
                     : "Not quite — " + last.answerKey + " (you picked " + last.picked + ")"}
                 </div>
-                <div className="reveal">
-                  <span className="tag" style={{ "--cdot": subColor(last.subset) }}>
-                    <span className="dot" />{last.subset}
-                  </span>
-                  <span className="casename">{last.c.name}</span>
-                  {last.d ? <span className="bartag">{DIRS[last.d]} view</span> : null}
-                  <span className="mono">{fmt(last.ms)}s</span>
+                <CaseReveal subset={last.subset} name={last.c.name} d={last.d} ms={last.ms} subColor={subColor}>
                   <button className="restart" style={{ marginTop: 0 }} onClick={nextRecog}>Next (space)</button>
-                </div>
+                </CaseReveal>
                 {last.others && last.others.length > 0 && (
                   <div className="hint" style={{ marginTop: 6 }}>
                     ⚠ with these centers this view is also consistent with: {last.others.join(", ")}
@@ -995,19 +978,8 @@ export default function SkewbTrainer() {
               </>
             ) : phase === "stopped" && last ? (
               <>
-                <div className="reveal">
-                  <span className="tag" style={{ "--cdot": subColor(last.subset) }}>
-                    <span className="dot" />{last.subset}
-                  </span>
-                  <span className="casename">{last.c.name}</span>
-                  {last.d ? <span className="bartag">{DIRS[last.d]} view</span> : null}
-                  <span className="mono">{fmt(last.ms)}s</span>
-                </div>
-                <div className="graderow">
-                  <button className="gradebtn hit" onClick={() => gradeRecog(true)}>Recognized ✓ (1)</button>
-                  <button className="gradebtn miss" onClick={() => gradeRecog(false)}>Missed ✗ (2)</button>
-                  <button className="preset" onClick={nextRecog}>skip (space)</button>
-                </div>
+                <CaseReveal subset={last.subset} name={last.c.name} d={last.d} ms={last.ms} subColor={subColor} />
+                <GradeRow hitLabel="Recognized" missLabel="Missed" onGrade={gradeRecog} onSkip={nextRecog} />
                 <AlgList c={last.c} d={last.d} rowText={rowText} />
               </>
             ) : current.view ? (
@@ -1080,11 +1052,7 @@ export default function SkewbTrainer() {
                         <span className="casename">solved — nothing left</span>
                       ) : last.match ? (
                         <>
-                          <span className="tag" style={{ "--cdot": subColor(last.match.subset) }}>
-                            <span className="dot" />{last.match.subset}
-                          </span>
-                          <span className="casename">{last.match.c.name}</span>
-                          {last.match.d ? <span className="bartag">{DIRS[last.match.d]} view</span> : null}
+                          <CaseTagParts subset={last.match.subset} name={last.match.c.name} d={last.match.d} subColor={subColor} />
                         </>
                       ) : (
                         <span className="casename">not in your sheets</span>
@@ -1093,11 +1061,7 @@ export default function SkewbTrainer() {
                     </div>
                   </>
                 )}
-                <div className="graderow">
-                  <button className="gradebtn hit" onClick={() => gradeOnelook(true)}>Got it ✓ (1)</button>
-                  <button className="gradebtn miss" onClick={() => gradeOnelook(false)}>Missed ✗ (2)</button>
-                  <button className="preset" onClick={nextOnelook}>skip (space)</button>
-                </div>
+                <GradeRow hitLabel="Got it" missLabel="Missed" onGrade={gradeOnelook} onSkip={nextOnelook} />
               </>
             ) : null}
           </div>
@@ -1109,22 +1073,19 @@ export default function SkewbTrainer() {
             </div>
             <div className={"timer" + (phase === "running" ? " running" : "")}>{fmt(elapsed)}</div>
             {phase === "stopped" && last && last.kind === "drill" ? (
-              <div className="reveal" onPointerDown={(e) => e.stopPropagation()}>
-                <span className="tag" style={{ "--cdot": subColor(last.subset) }}>
-                  <span className="dot" />{last.subset}
-                </span>
-                <span className="casename">{last.c.name}</span>
+              <CaseReveal subset={last.subset} name={last.c.name} subColor={subColor}
+                wrapProps={{ onPointerDown: (e) => e.stopPropagation() }}>
                 {(() => {
                   const k = knownKey(last.c.uid, last.d);
                   const isK = caseKnown.has(k);
                   return (
                     <button className={"markbtn ok" + (isK ? " sel" : "")} title="mark known (K)"
-                      onClick={() => setCaseKnown((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; })}>
+                      onClick={() => setCaseKnown((s) => toggledSet(s, k))}>
                       {isK ? "Known ✓" : "Mark known"}
                     </button>
                   );
                 })()}
-              </div>
+              </CaseReveal>
             ) : (
               <div className="hint">{phase === "running" ? "tap or any key to stop" : "tap or space to start"}</div>
             )}
@@ -1155,7 +1116,7 @@ export default function SkewbTrainer() {
                             <td className="mono">{s.n}</td>
                             <td className="mono">{s.hit}</td>
                             <td className="mono">{s.dk || 0}</td>
-                            <td className="mono">{Math.round((s.hit / s.n) * 100)}%</td>
+                            <td className="mono">{pct(s.hit, s.n)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1170,8 +1131,7 @@ export default function SkewbTrainer() {
                   const rows = Object.entries(onelookStats);
                   if (!rows.length) return <div className="empty">Reveal, then grade yourself (1 got it · 2 missed) — accuracy lands here per layer setting.</div>;
                   const rank = (k) => {
-                    const i = k.indexOf(SEP);
-                    const sub = k.slice(0, i), rest = k.slice(i + 1);
+                    const { sub, rest } = parseOnelookKey(k);
                     return sub === "len" ? [0, +rest, ""] : [1, 0, rest];
                   };
                   rows.sort(([a], [b]) => {
@@ -1184,13 +1144,13 @@ export default function SkewbTrainer() {
                       <tbody>
                         {rows.map(([k, s]) => (
                           <tr key={k}>
-                            <td className="name">{k.startsWith("sol" + SEP)
+                            <td className="name">{parseOnelookKey(k).sub === "sol"
                               ? <><AlgText text={s.label} />{s.nota ? <span className="casesub" style={{ marginLeft: 6 }}>{s.nota.toUpperCase()}</span> : null}</>
                               : s.label}</td>
                             <td className="mono">{s.n}</td>
                             <td className="mono">{s.hit}</td>
-                            <td className="mono">{Math.round((s.hit / s.n) * 100)}%</td>
-                            <td className="mono">{fmt(s.sum / s.n)}</td>
+                            <td className="mono">{pct(s.hit, s.n)}</td>
+                            <td className="mono">{mean(s.sum, s.n)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1215,8 +1175,8 @@ export default function SkewbTrainer() {
                           <tr>
                             <td className="mono">{tot.n}</td>
                             <td className="mono">{tot.hit}</td>
-                            <td className="mono">{Math.round((tot.hit / tot.n) * 100)}%</td>
-                            <td className="mono">{fmt(tot.sum / tot.n)}</td>
+                            <td className="mono">{pct(tot.hit, tot.n)}</td>
+                            <td className="mono">{mean(tot.sum, tot.n)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1327,6 +1287,45 @@ export default function SkewbTrainer() {
 
 // ---------- module-scope components (stable identity — never remounted by a
 // SkewbTrainer render; everything stateful arrives via props) ----------
+
+// segmented mode-button row: one control for every [value, label] toggle strip
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="modes">
+      {options.map(([v, l]) => (
+        <button key={v} className={"mode" + (value === v ? " on" : "")} onClick={() => onChange(v)}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+// the case identity strip every reveal shares: subset tag + case name +
+// optional view badge + optional time. CaseReveal wraps it in div.reveal;
+// surfaces with their own wrapper compose CaseTagParts directly.
+function CaseTagParts({ subset, name, d, ms, subColor, msSuffix }) {
+  return (
+    <>
+      <span className="tag" style={{ "--cdot": subColor(subset) }}><span className="dot" />{subset}</span>
+      <span className="casename">{name}</span>
+      {d ? <span className="bartag">{DIRS[d]} view</span> : null}
+      {ms !== undefined ? <span className="mono">{fmt(ms)}s{msSuffix || ""}</span> : null}
+    </>
+  );
+}
+function CaseReveal({ children, wrapProps, ...parts }) {
+  return <div className="reveal" {...(wrapProps || {})}><CaseTagParts {...parts} />{children}</div>;
+}
+
+// the self-grade row: hit / miss / skip, with the keyboard hints in the labels
+function GradeRow({ hitLabel, missLabel, onGrade, onSkip }) {
+  return (
+    <div className="graderow">
+      <button className="gradebtn hit" onClick={() => onGrade(true)}>{hitLabel} ✓ (1)</button>
+      <button className="gradebtn miss" onClick={() => onGrade(false)}>{missLabel} ✗ (2)</button>
+      <button className="preset" onClick={onSkip}>skip (space)</button>
+    </div>
+  );
+}
 
 // alg list for a shown (case, dir). `rowText` closes over the notation toggle.
 function AlgList({ c, d, rowText }) {
