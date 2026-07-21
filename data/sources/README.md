@@ -20,6 +20,12 @@ Each source file's top-level `credit` block (`title`, `url`, `by`) is carried in
 `data/skewb_algs.json` by the importer and shown as the attribution line at the
 top of that subset on the Algorithms page.
 
+**Provenance:** these transcriptions (and the subsets generated from them)
+remain the work of the authors credited above, included as community reference
+material with attribution. The repo's MIT license covers the site's code and
+original content, not the underlying sheets — see the note at the end of
+[LICENSE](../../LICENSE).
+
 ## Notation (important)
 
 Algorithms are written in **NS ("Rubik'skewb") notation** for the move letters
