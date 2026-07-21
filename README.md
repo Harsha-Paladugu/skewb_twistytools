@@ -40,7 +40,9 @@ Every layer is a classic browser script attached to `window`:
   distance/class-table builder used by both the census and the solver/trainer.
 - **`account.js`** (`window.OOAccount`) — Firebase Auth + per-user cloud data,
   with a localStorage demo fallback when no Firebase is configured.
-- **`dom.js`** (`window.OODom`) — small shared DOM helpers.
+- **`dom.js`** (`window.OODom`) — shared DOM helpers: the tiny hyperscript kit,
+  toasts, the WCA/NS notation preference + switch, and the boot-overlay /
+  fatal-error-card plumbing the oo and solver pages share.
 - **`navbar.js`** (`window.SiteNavbar`) — the shared top navigation.
 - **`config.js`** (`window.OO_CONFIG`) — Firebase config + `adminEmails`. The
   `apiKey` is a public client identifier, not a secret; access is enforced by

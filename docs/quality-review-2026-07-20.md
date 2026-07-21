@@ -221,46 +221,61 @@ runner, so browser checks are their primary gate; pushes to main deploy the live
 
 ---
 
-## Remediation checklist
+## Remediation checklist — campaign completed 2026-07-20
 
-Tick with the landing commit SHA. Phases per the campaign plan (docs pass → hygiene
-rails → comment sweep → dead code → plumbing clusters → trainer branch → CSS branch →
-final sweep).
+Every confirmed finding landed (SHAs below). Gates: `npm run build` +
+`check:fresh` before every commit; full runner suite + headless-Edge E2E per
+phase; CI green on main throughout.
 
-- [ ] A1 README rewrite (phase 1)
-- [ ] A2 notation-trap comments (phase 3)
-- [ ] A3 second-tier docs drift (phase 1)
-- [ ] A4 trainer monolith split (phase 6)
-- [ ] A5 engine geometry exports (phase 5b)
-- [ ] A6 rotation-regex dedup (phases 4/5a/5b/5d/6 by module)
-- [ ] A7 test-harness consolidation (phase 5a)
-- [ ] A8 tools shim consolidation (phase 5a)
-- [ ] A9 notation-pref helpers in OODom (phase 5c)
-- [ ] A10 side-integrity helper (phase 5c)
-- [ ] A11 engine internal dedups (phase 5b)
-- [ ] A12 bfsFrom in tables.js (phase 6)
-- [ ] A13 oo.js small dups — annotations (phase 3) + code (phase 5c)
-- [ ] A14 solver-core scaffolding (phase 5d)
-- [ ] A15 trainer JSX extraction (phase 6)
-- [ ] A16 CSS widget consolidation (phase 7)
-- [ ] A17 page-chrome worthwhile parts (phase 7); head-block ×5 dedup = WONTFIX (no
-      templating seam on a no-build static site); trainer.html boot script = ANTI-FIX
-- [ ] A18 trainer regeneration consolidation (phase 6)
-- [ ] A19 trainer persistence descriptor (phase 6)
-- [ ] A20 makeSolverCore contract docs + guards (phase 5d)
-- [ ] A21 algs.js cleanups — dead slices (phase 4) + rest (phase 5e)
-- [ ] A22 dead CSS deletion (phase 4)
-- [ ] A23 engine dead code (phase 4)
-- [ ] A24 trainer substrate dead bits (phase 4 + phase 6 leftovers)
-- [ ] A25 shared-layer vestiges — comments (phase 3) + dead (phase 4) + code (phase 5c)
-- [ ] A26 Pyraminx.net header sweep (phase 3)
-- [ ] A27 doubled headers (phase 3)
-- [ ] A28 retired-data-flow comments (phase 3)
-- [ ] A29 solver.css scoping + tokens + .algsubnav (phase 7)
-- [ ] A30 METHOD_ORDER one-liner (phase 5d) + tracking notes (phase 3)
-- [ ] A31 GitHub Actions CI (phase 2)
-- [ ] A32 .gitattributes (phase 2)
-- [ ] A33 MIT LICENSE + data provenance note (phase 2)
-- SKIPPED by decision: firestore.rules.test.mjs harness swap (unverifiable without the
-  emulator); tools/lib/bfs-dist.mjs BFS copy (documented deliberate); render.js
-  geometry copy (port-plan accepted debt).
+- [x] A1 README rewrite — 34a7f9c
+- [x] A2 notation-trap comments — d0492a6
+- [x] A3 second-tier docs drift — 68c958b
+- [x] A4 trainer monolith — e8aec29 (hoist), 7a23bbe (caseOfState→core),
+      a1897d8 (StatsPanel/CaseCard). PARTIAL BY CHOICE: the stage ternary's
+      three branches stay in-body — each is now thin composition over the
+      extracted components; a per-mode stage-component split remains available
+      polish, deferred as motion-without-new-information.
+- [x] A5 engine geometry exports — f243b64 (render.js copy stays: port-plan
+      accepted debt; independence anchor moved to test-engine)
+- [x] A6 rotation-regex dedup — e6ee852 (isRotTok2), 088b97f (tools), f243b64
+      (engine ROT_RE), 333b4cd (solver-core ROT_TOK), phase-8 commit (jsx
+      imports skewb-core's isRotTok)
+- [x] A7 test-harness consolidation — 088b97f (rules-test variant SKIPPED:
+      unverifiable without the emulator)
+- [x] A8 tools shim consolidation — 088b97f
+- [x] A9 notation-pref helpers in OODom — 62f5cf7
+- [x] A10 side-integrity helper (verifiedSide) — 62f5cf7
+- [x] A11 engine internal dedups (walkFrame/descend/NATIVE_LETTER) — f243b64
+- [x] A12 bfsFrom in tables.js — 47304a7 (bfs-dist.mjs Node copy stays:
+      documented deliberate)
+- [x] A13 oo.js small dups — d0492a6 (annotations) + 62f5cf7 (code)
+- [x] A14 solver-core scaffolding — 333b4cd (sweep counts pin-identical)
+- [x] A15 trainer JSX extraction — 6ce5a14 (one-look stat key format unchanged)
+- [x] A16 CSS widget consolidation — 6edbbec
+- [x] A17 worthwhile parts (config placement, OODom boot/error helpers) —
+      6edbbec. WONTFIX: head-block ×5 (no templating seam on a no-build site);
+      ANTI-FIX honored: trainer.html inline boot script (its ?v= ref is stamped
+      in place).
+- [x] A18 one problem generator + advance() fix — 7ab679b
+- [x] A19 persistence descriptor + legacy-blob compat test — 9660a2f
+- [x] A20 makeSolverCore contract docs + guards — 333b4cd
+- [x] A21 algs.js cleanups — e6ee852 (dead) + 3d86512 (rest)
+- [x] A22 dead CSS — 30eef96 (before/after screenshots byte-identical)
+- [x] A23 engine dead code — 61d39c7
+- [x] A24 trainer substrate dead bits — e6ee852
+- [x] A25 shared-layer vestiges — d0492a6 (comments), 4cfbb5c (render.js),
+      62f5cf7 (authBox/onChange note: unsubscribe closure NOT added — the
+      existing detach-on-next-change pattern in authBox covers the real case)
+- [x] A26 Pyraminx.net header sweep + logo aria-label — d6e78f8
+- [x] A27 doubled headers — d6e78f8
+- [x] A28 retired-data-flow comments — d0492a6
+- [x] A29 solver.css tokens/scoping + .algsubnav — 6edbbec
+- [x] A30 METHOD_ORDER from METHOD_PRIORITY — 333b4cd (+ d0492a6 notes)
+- [x] A31 GitHub Actions CI (npm ci + test:all) — b2226dc
+- [x] A32 .gitattributes LF pin — 40bf7ea
+- [x] A33 MIT LICENSE + data provenance — 76e499f
+- R1 residual reciprocal sync comment — d0492a6 (the duplication itself stays:
+  CLAUDE.md-documented deliberate)
+- SKIPPED by decision: firestore.rules.test.mjs harness swap (emulator-only
+  verification); tools/lib/bfs-dist.mjs BFS copy (deliberate Node twin);
+  render.js geometry copy (port-plan accepted debt).

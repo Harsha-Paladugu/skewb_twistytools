@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { createCore, DIRS, Y_PREFIX, SEP, SOL_EXAMPLES } from "./skewb-core.mjs";
+import { createCore, DIRS, Y_PREFIX, SEP, SOL_EXAMPLES, isRotTok } from "./skewb-core.mjs";
 
 // ============================================================
 // Skewbiks trainer — three tools over the imported method sheets
@@ -27,7 +27,6 @@ const SUBSET_COLORS = ["#3577cc", "#27975a", "#cf4d44", "#9355bd", "#cd7c20", "#
 // both-value validation. The trainer bundles its own React copy because
 // trainer.html does not load js/dom.js.
 const NOTA_KEY = "skewbiks-notation";
-const isRotTok = (t) => /^[xyz](2'|2|')?$/.test(t);
 
 // ---------- helpers ----------
 const fmt = (ms) => (ms / 1000).toFixed(2);

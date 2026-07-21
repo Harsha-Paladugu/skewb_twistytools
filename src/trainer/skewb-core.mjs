@@ -25,7 +25,7 @@ export const SEP = '\u001f';                   // id separator (case names are f
 const RATING_RANK = { best: 0, neutral: 1, poor: 3 };
 export const rateRank = (a) => (a && RATING_RANK[a.rating] !== undefined) ? RATING_RANK[a.rating] : 2;
 
-const isRotTok = (t) => /^[xyz](2'|2|')?$/.test(t);
+export const isRotTok = (t) => /^[xyz](2'|2|')?$/.test(t);   // rotation token (shared with the trainer bundle)
 function stripPostRot(alg) { // trailing whole-cube rotations are cosmetic
   const toks = String(alg).trim().split(/\s+/).filter(Boolean);
   while (toks.length && isRotTok(toks[toks.length - 1])) toks.pop();
