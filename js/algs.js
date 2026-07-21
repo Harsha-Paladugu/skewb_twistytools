@@ -249,8 +249,13 @@
   // needed). Groups are labelled Front/Right/Back/Left by their y-offset from
   // the case anchor; algs that don't parse to a clean state go in an unlabelled
   // group and are flagged. Rows follow the admin's saved order.
+  // cached per case (cleared with the other per-case caches): renderMain's
+  // search + the keystroke-path validate() both reach this, so recomputing per
+  // call meant re-parsing every alg of the case on each keystroke
+  const groupsCache = new Map();
   function mergedGroups(subsetKey, c) {
     const id = caseId(subsetKey, c.name);
+    if (groupsCache.has(id)) return groupsCache.get(id);
     const ov = overrides.get(id) || { added: [], removed: new Set(), order: [] };
     const rows = [];
     for (const a of c.algs) { if (ov.removed.has(a.alg)) continue; rows.push(makeRow(a, 'base')); }
@@ -276,8 +281,13 @@
       grp.sort((x, y) => ordIx(ord, x.alg) - ordIx(ord, y.alg));
       out.push({ side, rows: grp, image, pic });
     }
-    return out.sort((a, b) => sideRank(a.side) - sideRank(b.side));
+    const result = out.sort((a, b) => sideRank(a.side) - sideRank(b.side));
+    groupsCache.set(id, result);
+    return result;
   }
+  // the one per-case invalidation path — every edit flows through here (or
+  // through Store.loadAll's full clear)
+  function invalidateCase(id) { presCache.delete(id); extraTextsCache.delete(id); groupsCache.delete(id); }
 
   // validate a candidate WCA alg for a case -> {ok, side} | {ok:false, reason}
   // (typed rotation tokens are read with the input pipeline's engine
@@ -326,11 +336,21 @@
     return true; // demo mode (no Firebase): allow local editing
   }
   let draftError = ''; // surfaced by refreshStatus when a draft read/write fails
+  // Don't silently discard/overwrite an unreadable draft — set it aside under
+  // a .bad key and tell the user what we kept (shared by loadAll and save).
+  function setAsideBadDraft(raw, e, kept) {
+    console.error('algs: unreadable draft, set aside as ' + DRAFT_KEY + '.bad', e);
+    try { localStorage.setItem(DRAFT_KEY + '.bad', raw); } catch (_) {}
+    draftError = 'We couldn’t read your saved draft, so we set it aside (' + DRAFT_KEY + '.bad) and ' + kept + '.';
+  }
+  // Synchronous by nature — the draft store IS localStorage (per-browser until
+  // Export; there is no cloud copy).
   const Store = {
-    async loadAll() {
+    loadAll() {
       overrides.clear();
       presCache.clear();
       extraTextsCache.clear();
+      groupsCache.clear();
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       try {
@@ -350,22 +370,15 @@
           overrides.set(caseId(v.subset, v.case), { subset: v.subset, case: v.case, added, removed, order });
         }
       } catch (e) {
-        // Don't silently discard the user's draft — set it aside and tell them.
-        console.error('algs: unreadable draft, set aside as ' + DRAFT_KEY + '.bad', e);
-        try { localStorage.setItem(DRAFT_KEY + '.bad', raw); } catch (_) {}
-        draftError = 'We couldn’t read your saved draft, so we set it aside (' + DRAFT_KEY + '.bad) and started from the published algs.';
+        setAsideBadDraft(raw, e, 'started from the published algs');
       }
     },
-    async save(subsetKey, caseName) {
+    save(subsetKey, caseName) {
       const ov = overrides.get(caseId(subsetKey, caseName)) || { added: [], removed: new Set(), order: [] };
       let m = {};
       try { m = JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}; }
       catch (e) {
-        // Mirror loadAll: don't silently overwrite an unreadable draft — set it aside and warn.
-        const raw = localStorage.getItem(DRAFT_KEY);
-        console.error('algs: unreadable draft on save, set aside as ' + DRAFT_KEY + '.bad', e);
-        try { localStorage.setItem(DRAFT_KEY + '.bad', raw); } catch (_) {}
-        draftError = 'We couldn’t read your saved draft, so we set it aside (' + DRAFT_KEY + '.bad) and kept your current edits.';
+        setAsideBadDraft(localStorage.getItem(DRAFT_KEY), e, 'kept your current edits');
       }
       m[caseId(subsetKey, caseName)] = { subset: subsetKey, case: caseName, added: ov.added, removed: [...ov.removed], order: ov.order || [] };
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(m)); draftError = ''; return true; }
@@ -373,7 +386,7 @@
         // Don't pretend the edit persisted — make the failure visible.
         console.error('algs: draft save failed', e);
         draftError = 'We couldn’t save your draft (storage may be full or blocked). Your edits only live in this tab and will be lost on reload, so export now to keep them.';
-        if (typeof refreshStatus === 'function') refreshStatus();
+        refreshStatus();   // hoisted function declaration — always defined
         return false;
       }
     },
@@ -392,14 +405,14 @@
     // re-adding a removed baseline alg just clears the tombstone
     if (ov.removed.has(alg)) ov.removed.delete(alg);
     else if (!ov.added.some(x => x.alg === alg) && !c.algs.some(x => x.alg === alg)) ov.added.push({ alg, side });
-    await Store.save(subsetKey, c.name);
+    Store.save(subsetKey, c.name);
   }
-  async function removeAlg(subsetKey, c, row) {
+  function removeAlg(subsetKey, c, row) {
     const ov = getOv(subsetKey, c.name);
     if (row.source === 'add') ov.added = ov.added.filter(x => x.alg !== row.alg);
     else if (!ov.removed.has(row.alg)) ov.removed.add(row.alg);
     if (ov.order) ov.order = ov.order.filter(a => a !== row.alg);
-    await Store.save(subsetKey, c.name);
+    Store.save(subsetKey, c.name);
   }
 
   // the current full display order of a case's alg strings (groups in DIRS
@@ -408,7 +421,7 @@
     return mergedGroups(subKey, c).flatMap(g => g.rows.map(r => r.alg));
   }
   // move `row` up (dir=-1) or down (dir=+1) within its side group; persisted.
-  async function moveAlg(subKey, c, rows, row, dir) {
+  function moveAlg(subKey, c, rows, row, dir) {
     const i = rows.findIndex(r => r.alg === row.alg), j = i + dir;
     if (i < 0 || j < 0 || j >= rows.length) return;
     const ov = getOv(subKey, c.name);
@@ -418,13 +431,13 @@
     if (pa < 0 || pb < 0) return;
     const t = order[pa]; order[pa] = order[pb]; order[pb] = t;
     ov.order = order;
-    await Store.save(subKey, c.name);
+    Store.save(subKey, c.name);
   }
 
   // ---------- rendering ----------
   let query = '';
   let section = null;              // current subset key
-  let main, sideNav, statusEl, notaBox, subNav;
+  let main, sideNav, statusEl, notaBox, subNav, exportBtn;
 
   // display lines that differ from every authored text (the re-derived leads
   // of rotated-picture groups) — cached per case so search stays fast, and
@@ -523,7 +536,7 @@
   const anchorIdOf = (name) => 'case-' + String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
   function renderCase(subKey, c) {
     const card = h('div', { class: 'casecard', id: anchorIdOf(c.name) });
-    const rerender = () => { presCache.delete(caseId(subKey, c.name)); extraTextsCache.delete(caseId(subKey, c.name)); card.replaceWith(renderCase(subKey, c)); };
+    const rerender = () => { invalidateCase(caseId(subKey, c.name)); card.replaceWith(renderCase(subKey, c)); };
     card.appendChild(h('div', { class: 'casehd' }, h('span', { class: 'casename' }, c.name)));
     const body = h('div', { class: 'casebody' });
     const groups = mergedGroups(subKey, c);
@@ -701,7 +714,7 @@
     statusEl = h('span', { class: 'algstatus' });
     notaBox = h('div', { class: 'notaswitch', role: 'group', 'aria-label': 'move notation' });
     renderToolbarNota();
-    const exportBtn = h('button', { class: 'ghost sm export', onclick: exportJSON }, 'Export JSON');
+    exportBtn = h('button', { class: 'ghost sm export', onclick: exportJSON }, 'Export JSON');
 
     const tabs = h('div', { class: 'sectabs' }, SECTIONS.map(s =>
       h('button', { class: 'sectab' + (s.id === section ? ' on' : ''), 'data-sec': s.id, 'aria-pressed': s.id === section ? 'true' : 'false', onclick: () => switchSection(s.id) }, s.label)));
@@ -733,13 +746,14 @@
         + (admin ? ' · editing as admin. Changes save to this browser; use Export to publish.' : '');
       statusEl.className = 'algstatus' + (admin ? ' admin' : '');
     }
-    const exp = document.querySelector('.export'); if (exp) exp.style.display = admin ? '' : 'none';
+    if (exportBtn) exportBtn.style.display = admin ? '' : 'none';
   }
 
   // ---------- boot ----------
   async function boot() {
     try {
       const res = await fetch('data/skewb_algs.json');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       DATA = await res.json();
     } catch (e) {
       app.appendChild(h('div', { class: 'algerr' }, 'We couldn’t load the algorithms. Try reloading the page.'));
@@ -750,11 +764,12 @@
     const first = SECTIONS.find(s => SUBSETMAP[s.id].cases.length) || SECTIONS[0];
     section = first ? first.id : null;
     if (A && A.whenReady) { try { await A.whenReady(); } catch (e) {} }
-    await Store.loadAll();
+    Store.loadAll();
     build();
-    // single auth-change handler: re-pull overrides + admin state after auth
-    // settles (cloud may differ from anon), then refresh the UI once.
-    if (A && A.onChange) A.onChange(async () => { await Store.loadAll(); refreshStatus(); renderMain(); });
+    // single auth-change handler: drafts are localStorage-only, but ADMIN
+    // GATING follows the signed-in account — re-read the draft (self-heal
+    // against the baseline) and refresh the toolbar/admin UI once auth settles.
+    if (A && A.onChange) A.onChange(() => { Store.loadAll(); refreshStatus(); renderMain(); });
   }
   boot();
 })();
