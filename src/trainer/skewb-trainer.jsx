@@ -754,86 +754,10 @@ export default function SkewbTrainer() {
     persist({ caseStats: {}, recogStats: {}, centersStats: {}, onelookStats: {} });
   };
 
-  // ---------- alg list for a shown (case, dir) ----------
-  function AlgList({ c, d }) {
-    const rows = core.algsForDir(c, d);
-    if (!rows.length) return <div className="empty">No algorithms for this view yet.</div>;
-    return (
-      <div className="alglist">
-        {rows.map((row, i) => (
-          <div key={i} className={"algrow" + (row.a.suspect ? " suspectrow" : "")}>
-            <span className={"ychip mono" + (row.k ? "" : " blank")}>{row.k ? Y_PREFIX[row.k] : ""}</span>
-            <span className={"fmkey mono" + (core.firstMoveOf(row) ? "" : " blank")}>{core.firstMoveOf(row) || "—"}</span>
-            <AlgText text={rowText(row)} />
-            {row.a.rating === "best" ? <span className="ratetag best">best</span> : null}
-            {row.a.rating === "poor" ? <span className="ratetag poor">poor</span> : null}
-            {row.a.suspect ? <span className="warntag" title="flagged suspect at import (off its case's rotation class)">⚠</span> : null}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // ---------- case browser modal ----------
-  function CaseBrowser({ subKey }) {
-    const sub = model().subsets.find((s) => s.key === subKey);
-    const [grp, setGrp] = useState(sub.groups[0] ? sub.groups[0].value : "");
-    const [filter, setFilter] = useState("");
-    const g = sub.groups.find((x) => x.value === grp) || sub.groups[0];
-    const filterField = sub.nav && sub.nav.filter && sub.nav.filter.field;
-    const filterVals = filterField ? [...new Set(g.cases.map((c) => c[filterField]).filter((v) => v != null))] : [];
-    let list = core.navSorted(sub, g.cases);
-    if (filter && filterField) list = list.filter((c) => c[filterField] === filter);
-    return (
-      <div className="overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) setCaseBrowser(null); }}>
-        <div className="modal">
-          <div className="modalhead">
-            <div>
-              <div className="modaltitle">{sub.name} cases</div>
-              <span className="tag" style={{ "--cdot": subColor(sub.key) }}>
-                <span className="dot" />{enabledCount(sub).on}/{enabledCount(sub).total} on · {knownCount(sub)} known
-              </span>
-            </div>
-            <button className="closebtn" onClick={() => setCaseBrowser(null)}>{"×"}</button>
-          </div>
-          <div className="chips" style={{ marginBottom: 8 }}>
-            {sub.groups.map((x) => (
-              <button key={x.value} className={"mode" + (x.value === g.value ? " on" : "")}
-                onClick={() => { setGrp(x.value); setFilter(""); }}>{x.label}</button>
-            ))}
-            {filterVals.length > 1 && (
-              <select className="filtersel" value={filter} onChange={(e) => setFilter(e.target.value)}
-                aria-label={sub.nav.filter.label}>
-                <option value="">{sub.nav.filter.label}: all</option>
-                {filterVals.map((v) => <option key={v} value={v}>{String(v)}</option>)}
-              </select>
-            )}
-          </div>
-          <div className="presets" style={{ margin: "0 0 10px" }}>
-            <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.delete(c.uid); return n; })}>enable shown</button>
-            <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.add(c.uid); return n; })}>disable shown</button>
-            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.add(knownKey(c.uid, 0)); return n; })}>mark shown known</button>
-            <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.delete(knownKey(c.uid, 0)); return n; })}>mark shown unknown</button>
-          </div>
-          <div className="chips">
-            {list.map((c) => {
-              const kn = caseKnown.has(knownKey(c.uid, 0));
-              return (
-                <span key={c.uid} className="markwrap">
-                  <button className={"chip" + (caseOff.has(c.uid) ? "" : " on")}
-                    style={{ "--cdot": subColor(sub.key) }} onClick={() => toggleCase(c.uid)}>
-                    <span className="dot" />{c.name}{kn ? " ✓" : ""}
-                  </button>
-                  <button className={"markbtn ok" + (kn ? " sel" : "")} title="mark known"
-                    onClick={() => toggleKnown(c.uid)}>K</button>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // (AlgList and CaseBrowser are MODULE-scope components — see below the
+  // SkewbTrainer body. Declaring them in-body made React remount them on
+  // every parent render, resetting CaseBrowser's group/filter state whenever
+  // one of its own chip clicks touched parent state.)
 
   // ---------- render ----------
   const recapDone = mode === "recap" && recap && recap.idx >= recap.queue.length;
@@ -1098,7 +1022,7 @@ export default function SkewbTrainer() {
                     ⚠ with these centers this view is also consistent with: {last.others.join(", ")}
                   </div>
                 )}
-                <AlgList c={last.c} d={last.d} />
+                <AlgList c={last.c} d={last.d} rowText={rowText} />
               </>
             ) : phase === "stopped" && last ? (
               <>
@@ -1115,7 +1039,7 @@ export default function SkewbTrainer() {
                   <button className="gradebtn miss" onClick={() => gradeRecog(false)}>Missed ✗ (2)</button>
                   <button className="preset" onClick={nextRecog}>skip (space)</button>
                 </div>
-                <AlgList c={last.c} d={last.d} />
+                <AlgList c={last.c} d={last.d} rowText={rowText} />
               </>
             ) : current.view ? (
               <>
@@ -1237,7 +1161,7 @@ export default function SkewbTrainer() {
             )}
             {phase === "stopped" && last && last.kind === "drill" ? (
               <div className="analysis" onPointerDown={(e) => e.stopPropagation()}>
-                <AlgList c={last.c} d={last.d} />
+                <AlgList c={last.c} d={last.d} rowText={rowText} />
               </div>
             ) : null}
           </div>
@@ -1420,7 +1344,99 @@ export default function SkewbTrainer() {
           </div>
         </div>
 
-        {caseBrowser && <CaseBrowser subKey={caseBrowser} />}
+        {caseBrowser && (() => {
+          const sub = m && m.subsets.find((s) => s.key === caseBrowser);
+          return sub ? <CaseBrowser sub={sub} caseOff={caseOff} caseKnown={caseKnown}
+            subColor={subColor} enabledCount={enabledCount} knownCount={knownCount}
+            onClose={() => setCaseBrowser(null)} onToggleCase={toggleCase} onToggleKnown={toggleKnown}
+            setCaseOff={setCaseOff} setCaseKnown={setCaseKnown} /> : null;
+        })()}
+      </div>
+    </div>
+  );
+}
+
+// ---------- module-scope components (stable identity — never remounted by a
+// SkewbTrainer render; everything stateful arrives via props) ----------
+
+// alg list for a shown (case, dir). `rowText` closes over the notation toggle.
+function AlgList({ c, d, rowText }) {
+  const rows = core.algsForDir(c, d);
+  if (!rows.length) return <div className="empty">No algorithms for this view yet.</div>;
+  return (
+    <div className="alglist">
+      {rows.map((row, i) => (
+        <div key={i} className={"algrow" + (row.a.suspect ? " suspectrow" : "")}>
+          <span className={"ychip mono" + (row.k ? "" : " blank")}>{row.k ? Y_PREFIX[row.k] : ""}</span>
+          <span className={"fmkey mono" + (core.firstMoveOf(row) ? "" : " blank")}>{core.firstMoveOf(row) || "—"}</span>
+          <AlgText text={rowText(row)} />
+          {row.a.rating === "best" ? <span className="ratetag best">best</span> : null}
+          {row.a.rating === "poor" ? <span className="ratetag poor">poor</span> : null}
+          {row.a.suspect ? <span className="warntag" title="flagged suspect at import (off its case's rotation class)">⚠</span> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// case browser modal. Its own group/filter selections are LOCAL state and now
+// survive chip clicks that mutate the parent (the in-body version remounted
+// and reset them). Parent state and actions come in as props.
+function CaseBrowser({ sub, caseOff, caseKnown, subColor, enabledCount, knownCount,
+                       onClose, onToggleCase, onToggleKnown, setCaseOff, setCaseKnown }) {
+  const [grp, setGrp] = useState(sub.groups[0] ? sub.groups[0].value : "");
+  const [filter, setFilter] = useState("");
+  const g = sub.groups.find((x) => x.value === grp) || sub.groups[0];
+  const filterField = sub.nav && sub.nav.filter && sub.nav.filter.field;
+  const filterVals = filterField ? [...new Set(g.cases.map((c) => c[filterField]).filter((v) => v != null))] : [];
+  let list = core.navSorted(sub, g.cases);
+  if (filter && filterField) list = list.filter((c) => c[filterField] === filter);
+  return (
+    <div className="overlay" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal">
+        <div className="modalhead">
+          <div>
+            <div className="modaltitle">{sub.name} cases</div>
+            <span className="tag" style={{ "--cdot": subColor(sub.key) }}>
+              <span className="dot" />{enabledCount(sub).on}/{enabledCount(sub).total} on · {knownCount(sub)} known
+            </span>
+          </div>
+          <button className="closebtn" onClick={onClose}>{"×"}</button>
+        </div>
+        <div className="chips" style={{ marginBottom: 8 }}>
+          {sub.groups.map((x) => (
+            <button key={x.value} className={"mode" + (x.value === g.value ? " on" : "")}
+              onClick={() => { setGrp(x.value); setFilter(""); }}>{x.label}</button>
+          ))}
+          {filterVals.length > 1 && (
+            <select className="filtersel" value={filter} onChange={(e) => setFilter(e.target.value)}
+              aria-label={sub.nav.filter.label}>
+              <option value="">{sub.nav.filter.label}: all</option>
+              {filterVals.map((v) => <option key={v} value={v}>{String(v)}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="presets" style={{ margin: "0 0 10px" }}>
+          <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.delete(c.uid); return n; })}>enable shown</button>
+          <button className="preset" onClick={() => setCaseOff((s) => { const n = new Set(s); for (const c of list) n.add(c.uid); return n; })}>disable shown</button>
+          <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.add(knownKey(c.uid, 0)); return n; })}>mark shown known</button>
+          <button className="preset" onClick={() => setCaseKnown((s) => { const n = new Set(s); for (const c of list) n.delete(knownKey(c.uid, 0)); return n; })}>mark shown unknown</button>
+        </div>
+        <div className="chips">
+          {list.map((c) => {
+            const kn = caseKnown.has(knownKey(c.uid, 0));
+            return (
+              <span key={c.uid} className="markwrap">
+                <button className={"chip" + (caseOff.has(c.uid) ? "" : " on")}
+                  style={{ "--cdot": subColor(sub.key) }} onClick={() => onToggleCase(c.uid)}>
+                  <span className="dot" />{c.name}{kn ? " ✓" : ""}
+                </button>
+                <button className={"markbtn ok" + (kn ? " sel" : "")} title="mark known"
+                  onClick={() => onToggleKnown(c.uid)}>K</button>
+              </span>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
