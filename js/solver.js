@@ -80,9 +80,9 @@ const UI = {
   optionsOpen: false,
 };
 const SHOW_LENS = 3;        // movecount cards shown before the expander
-// labels come from the core's method registry (single source)
+// labels AND order come from the core's method registry (single source)
 const METHOD_LABEL = Object.fromEntries(Object.keys(CORE.METHOD_DEFS).map(id => [id, CORE.METHOD_DEFS[id].name]));
-const METHOD_ORDER = ['fl', 'tcll', 'eg2'];
+const METHOD_ORDER = window.OOSolverCore.METHOD_PRIORITY;   // module-level export, not per-instance
 // first-step comment for the reconstruction view, per method
 // (KEEP IN SYNC with CORE.METHOD_DEFS — a method added to the registry needs a row here)
 const FACE_NAME = { U: 'top', D: 'bottom', F: 'front', B: 'back', R: 'right', L: 'left' };

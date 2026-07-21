@@ -71,6 +71,15 @@ const METHOD_DEFS = {
 };
 const METHOD_PRIORITY = ['fl', 'tcll', 'eg2'];
 
+// Parameter contract:
+//   E       — window.OOEngine (always required).
+//   dist    — the full BFS distance table, or null. Required by search()
+//             (guarded there); everything else — the physical model, algIndex,
+//             methodView, layerDownFacelets, sheetLineFor — works without it.
+//   algData — parsed data/skewb_algs.json, or null. Without it algIndex() is
+//             empty and search() finds only first-step-solves; the display
+//             helpers still work. algs.js passes (E, null, null) for exactly
+//             that reason.
 function makeSolverCore(E, dist, algData) {
   const NMOVES = E.MOVES.length;              // 8 native moves; m>>1 = axis, m^1 = inverse
   const syms = E.buildSyms();
@@ -165,22 +174,29 @@ function makeSolverCore(E, dist, algData) {
       C = pThen(C, t.kind === 'rot' ? pPow(SHEET_PHYS[t.f], t.amt) : pPow(TWIST[t.c], t.amt));
     return C;
   }
+  const ROT_TOK = /^([xyz])(2'|2|')?$/;
   const sheetStrPerm = str => String(str).split(/\s+/).filter(Boolean).reduce((C, tok) => {
-    const m = tok.match(/^([xyz])(2'|2|')?$/);
+    const m = tok.match(ROT_TOK);
     if (!m) throw new Error('not a rotation token: ' + tok);
     return pThen(C, pPow(SHEET_PHYS[m[1]], m[2] === "'" ? 3 : m[2] ? 2 : 1));
   }, ID30);
-  const SHEET_SINGLES = [];
-  for (const a of ['y', 'x', 'z']) for (const suf of ['', "'", '2']) SHEET_SINGLES.push(a + suf);
-  const ROT24 = [{ perm: ID30.slice(), spell: '' }];
-  const seenRot = new Set([permKey(ID30)]);
-  const addRot = spell => {
-    const p = sheetStrPerm(spell), k = permKey(p);
-    if (!seenRot.has(k)) { seenRot.add(k); ROT24.push({ perm: p, spell }); }
-  };
-  for (const t of SHEET_SINGLES) addRot(t);
-  for (const a of SHEET_SINGLES) for (const b of SHEET_SINGLES) addRot(a + ' ' + b);
-  if (ROT24.length !== 24) throw new Error('expected 24 orientations, got ' + ROT24.length);
+  // Enumerate the 24 whole-cube orientations by closing rotation words of
+  // length ≤ 2 over a perm function; add(word, perm) fires once per NEW
+  // orientation. FIRST-SEEN order is LOAD-BEARING: the first (nicest) spelling
+  // found for an orientation is the one displayed everywhere — the test:solver
+  // sweep counts pin the resulting choices.
+  function enumerate24(wordPerm, add) {
+    const singles = [];
+    for (const a of ['y', 'x', 'z']) for (const suf of ['', "'", '2']) singles.push(a + suf);
+    const seen = new Set();
+    const tryWord = w => { const p = wordPerm(w), k = permKey(p); if (!seen.has(k)) { seen.add(k); add(w, p); } };
+    tryWord('');
+    for (const t of singles) tryWord(t);
+    for (const a of singles) for (const b of singles) tryWord(a + ' ' + b);
+    if (seen.size !== 24) throw new Error('expected 24 orientations, got ' + seen.size);
+  }
+  const ROT24 = [];
+  enumerate24(w => w ? sheetStrPerm(w) : ID30.slice(), (spell, perm) => ROT24.push({ perm, spell }));
   const SOLVED_FL = E.solvedFacelets();
   const SOLVED24 = ROT24.map(r => pApply(SOLVED_FL, r.perm));
   const SOLVED24_KEYS = new Set(SOLVED24.map(flKey));
@@ -218,18 +234,15 @@ function makeSolverCore(E, dist, algData) {
   const engFrameOf = engStr => {
     let fp = E.FACE_ID;
     for (const t of String(engStr).split(/\s+/).filter(Boolean)) {
-      const m = t.match(/^([xyz])(2'|2|')?$/), n = m[2] === "'" ? 3 : m[2] ? 2 : 1;
+      const m = t.match(ROT_TOK), n = m[2] === "'" ? 3 : m[2] ? 2 : 1;
       for (let i = 0; i < n; i++) fp = E.faceCompose(fp, rotBy.xyz[m[1]].fp);
     }
     return frameOf(fp);
   };
-  const ENG_SINGLES = [];
-  for (const a of ['y', 'x', 'z']) for (const suf of ['', "'", '2']) ENG_SINGLES.push(a + suf);
-  const engByPhys = new Map([[permKey(physPerm([])), '']]);
-  const addEng = engStr => { const k = permKey(physPerm(E.parseAlg(engStr, 'ns'))); if (!engByPhys.has(k)) engByPhys.set(k, engStr); };
-  for (const t of ENG_SINGLES) addEng(t);
-  for (const a of ENG_SINGLES) for (const b of ENG_SINGLES) addEng(a + ' ' + b);
-  if (engByPhys.size !== 24) throw new Error('expected 24 engine rotations, got ' + engByPhys.size);
+  // the same 24-orientation enumeration, over ENGINE-letter words this time
+  // (physical perm of the parsed word) — keyed by perm for the LEAD lookup
+  const engByPhys = new Map();
+  enumerate24(w => physPerm(w ? E.parseAlg(w, 'ns') : []), (word, perm) => engByPhys.set(permKey(perm), word));
   const LEAD = ROT24.map(r => {
     const engStr = engByPhys.get(permKey(r.perm));
     return { sheet: r.spell, engStr, frame: engFrameOf(engStr) };
@@ -242,6 +255,22 @@ function makeSolverCore(E, dist, algData) {
   // state: written free-corner letters each leave a 240° whole-cube rotation
   // the engine absorbs into its parsing frame).
   const heldFacelets = parsed => pApply(SOLVED_FL, physPerm(parsed));
+
+  // Φ⁻¹ of the 24 solved orientations, deduped (symmetric texts repeat
+  // states): the exact key set of pre-states a finish body physically solves.
+  // Set iteration order = SOLVED24 order (first-seen), which downstream
+  // consumers rely on.
+  function preStatesOf(phi) {
+    const inv = pInv(phi), keys = new Set();
+    for (const S of SOLVED24) keys.add(flKey(pApply(S, inv)));
+    return keys;
+  }
+  // the ROT24 rotation taking pinned facelets A to physically-held facelets B
+  // (null if B is not a rotation image of A) — nicest spelling first
+  const rotTaking = (A, B) => { const kb = flKey(B); return ROT24.find(r => flKey(pApply(A, r.perm)) === kb) || null; };
+  // nicest setup rotation R (ROT24 spelling order — load-bearing) with
+  // R(fl) in the pre-state key set, or null
+  const findSetupRot = (fl, preKeys) => ROT24.find(r => preKeys.has(flKey(pApply(fl, r.perm)))) || null;
 
   /* ---------- first-step target spaces ---------- */
   // D-anchored states per method (the complement of the built layer is free,
@@ -361,17 +390,13 @@ function makeSolverCore(E, dist, algData) {
             // solved in ANY orientation; leading rotations changed nothing
             // here (they only permute SOLVED24), which is why the fold above
             // is exact
-            const inv = pInv(phi);
-            const seenStates = new Set();
-            for (const S of SOLVED24) {
-              const k = flKey(pApply(S, inv));
-              if (seenStates.has(k)) continue;          // symmetric texts repeat states
-              seenStates.add(k);
+            const preKeys = preStatesOf(phi);
+            for (const k of preKeys) {
               let list = _algIndex.get(k);
               if (!list) { list = []; _algIndex.set(k, list); }
               list.push(row);
             }
-            row.preKeys = seenStates;                   // per-row set, for rotation choice
+            row.preKeys = preKeys;                      // per-row set, for rotation choice
           });
         }
       }
@@ -388,6 +413,9 @@ function makeSolverCore(E, dist, algData) {
   //   row = the finishing sheet alg (null when the first step already solves);
   //   the display rotations are derived per solution in methodView.
   function search(scr, opts) {
+    // the one member that hard-requires the dist table (see the factory's
+    // parameter contract) — fail loudly rather than descending into NaN-land
+    if (!dist) throw new Error('makeSolverCore: search() needs the dist table (this core was built without one)');
     const caps = {};
     for (const id of Object.keys(METHOD_DEFS))
       caps[id] = Number.isFinite(opts.caps && opts.caps[id]) ? opts.caps[id] : METHOD_DEFS[id].cap;
@@ -500,7 +528,7 @@ function makeSolverCore(E, dist, algData) {
     heldFl = heldFl || rawFl;
     // G: raw pinned facelets -> the hold in hand (exists for every hold that
     // really is this state; a mismatched heldFl just fails every proof below)
-    const G = ROT24.find(r => flKey(pApply(rawFl, r.perm)) === flKey(heldFl)) || null;
+    const G = rotTaking(rawFl, heldFl);
     const emitFrom = rhoD => G && LEAD_BY_KEY.get(permKey(pThen(G.perm, rhoD.perm)));
     const jState = E.copy(scr);
     for (const m of item.pmoves) E.applyMoveIdx(jState, m);
@@ -525,7 +553,7 @@ function makeSolverCore(E, dist, algData) {
     const jFl = E.toFacelets(jState);
     // ROT24 rotation ρ relating the pinned junction facelets to what the human
     // physically holds after [lead][layer]; the built layer then sits on ρ(item.face)
-    const rotBetween = jPhys => ROT24.find(r => flKey(pApply(jFl, r.perm)) === flKey(jPhys)) || null;
+    const rotBetween = jPhys => rotTaking(jFl, jPhys);
     const layerFaceUnder = rho => FACES.find(f => rho.perm[FIDX[f] * 5] === FIDX[item.face] * 5);
 
     // pick the leading rotation: nicest that lands the layer on the bottom
@@ -550,8 +578,7 @@ function makeSolverCore(E, dist, algData) {
 
     // finish setup rotation: nicest R with R(held junction) in the alg's pre-state set
     let R = null, rot = '';
-    if (best) for (const r of ROT24)
-      if (item.row.preKeys.has(flKey(pApply(best.jPhys, r.perm)))) { R = r.perm; rot = r.spell; break; }
+    if (best) { const r = findSetupRot(best.jPhys, item.row.preKeys); if (r) { R = r.perm; rot = r.spell; } }
     const okBody = !!(best && R) && SOLVED24_KEYS.has(flKey(pApply(pApply(best.jPhys, R), item.row.phi)));
     const first = best ? best.first : '';
     const lead = best ? best.rhoD.spell : '';
@@ -607,19 +634,22 @@ function makeSolverCore(E, dist, algData) {
     if (SOLVED24_KEYS.has(flKey(pApply(heldFl, physPermNS(toks)))))
       return { text: String(text), ok: true };
     const { ns, nsToks } = foldLeadRots(String(text), toks);
-    const phi = physPermNS(nsToks), inv = pInv(phi);
-    const pre = new Set(SOLVED24.map(S => flKey(pApply(S, inv))));
-    for (const r of ROT24)
-      if (pre.has(flKey(pApply(heldFl, r.perm))))
-        return { text: [r.spell, ns].filter(Boolean).join(' '), ok: true, rederived: true };
+    const r = findSetupRot(heldFl, preStatesOf(physPermNS(nsToks)));
+    if (r) return { text: [r.spell, ns].filter(Boolean).join(' '), ok: true, rederived: true };
     return { text: String(text), ok: false };
   }
 
   // physPerm reads ENGINE rotation letters, physPermNS reads SHEET letters —
   // authored `ns` texts MUST go through physPermNS (see their doc comments).
-  return { emitNS, LEAD, ROT24, physPerm, physPermNS, sheetStrPerm, heldFacelets, SOLVED24_KEYS, flKey, pApply, pInv,
-           foldLeadRots, targets, dAnchored, algIndex, search, methodView, METHOD_DEFS, syms, rotBy,
-           layerDownFacelets, sheetLineFor };
+  return {
+    // page API — consumed by solver.js, algs.js and the trainer tests
+    search, methodView, sheetLineFor, layerDownFacelets, heldFacelets,
+    physPerm, physPermNS, flKey, pApply, SOLVED24_KEYS, METHOD_DEFS,
+    // internals exposed for tools/test-solver.mjs (target-space + index +
+    // emitter pins) — not a stable page surface
+    emitNS, LEAD, ROT24, sheetStrPerm, foldLeadRots, targets, dAnchored,
+    algIndex, syms, rotBy,
+  };
 }
 if (typeof module !== 'undefined') module.exports = { makeSolverCore, METHOD_DEFS, METHOD_PRIORITY };
 window.OOSolverCore=module.exports;})();
